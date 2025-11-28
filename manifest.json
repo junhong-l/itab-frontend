@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "导航页",
+  "version": "1.0.0",
+  "description": "一个自定义的浏览器导航页扩展",
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+}
