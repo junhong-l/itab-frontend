@@ -47,8 +47,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       title = tab.title || extractDomainName(url);
     }
 
-    // 保存书签数据到存储，然后打开新标签页让用户选择文件夹
-    saveBookmarkAndOpenTab(url, title, isPrivate);
+    // 保存书签数据到存储，记录来源标签页ID，然后打开新标签页让用户选择文件夹
+    saveBookmarkAndOpenTab(url, title, isPrivate, tab.id);
   }
 });
 
@@ -63,12 +63,13 @@ function extractDomainName(url) {
 }
 
 // 保存待添加的书签信息并打开导航页
-async function saveBookmarkAndOpenTab(url, title, isPrivate) {
-  // 将待添加的书签信息存储起来
+async function saveBookmarkAndOpenTab(url, title, isPrivate, sourceTabId) {
+  // 将待添加的书签信息存储起来，包含来源标签页ID
   const pendingBookmark = {
     url,
     title,
     isPrivate,
+    sourceTabId,  // 记录来源标签页ID，用于返回
     timestamp: Date.now()
   };
   
@@ -88,5 +89,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.remove(['pendingBookmark']);
     });
     return true; // 表示会异步发送响应
+  }
+  
+  // 激活指定标签页（返回到来源页面）
+  if (message.type === 'activateTab') {
+    const tabId = message.tabId;
+    if (tabId) {
+      chrome.tabs.get(tabId, (tab) => {
+        if (!chrome.runtime.lastError && tab) {
+          chrome.tabs.update(tabId, { active: true });
+        }
+      });
+    }
+    sendResponse({ success: true });
+    return false;
   }
 });

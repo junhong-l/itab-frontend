@@ -197,7 +197,10 @@
     syncConnected: false,
     syncConfig: null,
     syncBackups: [],        // 云端备份列表
-    selectedBackupId: null  // 选中的备份ID
+    selectedBackupId: null, // 选中的备份ID
+    // 是否从右键菜单打开添加书签
+    isAddBookmarkFromContextMenu: false,
+    sourceTabId: null  // 来源标签页ID，用于返回
   };
 
   // 初始化应用
@@ -3035,10 +3038,16 @@
       return;
     }
 
+    // 标记是从右键菜单打开的
+    state.isAddBookmarkFromContextMenu = true;
+
     // 从background脚本获取待添加的书签信息
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage({ type: 'getPendingBookmark' }, (pendingBookmark) => {
         if (pendingBookmark) {
+          // 保存来源标签页ID
+          state.sourceTabId = pendingBookmark.sourceTabId || null;
+
           // 填充书签信息
           elements.pageBookmarkName.value = pendingBookmark.title || '';
           elements.pageBookmarkUrl.value = pendingBookmark.url || '';
@@ -3096,6 +3105,31 @@
     elements.addPageBookmarkModal.classList.remove('show');
     elements.pageBookmarkName.value = '';
     elements.pageBookmarkUrl.value = '';
+
+    // 如果是从右键菜单打开的，返回到来源页面并关闭当前标签页
+    if (state.isAddBookmarkFromContextMenu) {
+      state.isAddBookmarkFromContextMenu = false;
+      goBackToSourceTab();
+    }
+  }
+
+  // 返回到来源标签页并关闭当前标签页
+  function goBackToSourceTab() {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.tabs) {
+      // 先激活来源标签页
+      if (state.sourceTabId) {
+        chrome.runtime.sendMessage({ type: 'activateTab', tabId: state.sourceTabId });
+      }
+      
+      // 然后关闭当前标签页
+      chrome.tabs.getCurrent((tab) => {
+        if (tab) {
+          chrome.tabs.remove(tab.id);
+        }
+      });
+      
+      state.sourceTabId = null;
+    }
   }
 
   // 更新页面书签选择器（工作区和文件夹）
@@ -3195,8 +3229,15 @@
     state.shortcuts.push(newShortcut);
     await Storage.set('shortcuts', state.shortcuts);
 
+    // 保存是否从右键菜单打开的状态，因为关闭弹窗后需要判断是否关闭标签页
+    const shouldCloseTab = state.isAddBookmarkFromContextMenu;
+
     closeAddPageBookmarkModal();
-    renderShortcuts();
+    
+    // 如果不是从右键菜单打开的，才渲染（因为标签页会关闭）
+    if (!shouldCloseTab) {
+      renderShortcuts();
+    }
 
     // 提示成功
     const typeText = isPrivate ? '隐私' : '普通';
