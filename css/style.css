@@ -1546,6 +1546,13 @@ body.multi-select-mode .shortcut-item.selected {
   cursor: pointer;
   transition: background 0.2s;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-item svg {
+  flex-shrink: 0;
 }
 
 .context-menu-item:hover {
@@ -1979,4 +1986,20 @@ body.is-dragging .root-shortcuts .shortcuts-grid:empty::after {
 
 .sync-info.show {
   display: block;
+}
+
+/* 页面类型选项样式 */
+.page-type-options {
+  display: flex;
+  gap: 15px;
+}
+
+.page-type-options .radio-option {
+  flex: 1;
+  padding: 10px 15px;
+}
+
+.page-type-options .radio-label {
+  flex-direction: row;
+  align-items: center;
 }

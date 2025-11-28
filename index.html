@@ -401,6 +401,70 @@
     <div class="context-menu-item" id="deletePartition">删除分区</div>
   </div>
 
+  <!-- 页面右键菜单（空白处点击） -->
+  <div class="context-menu" id="pageContextMenu">
+    <div class="context-menu-item" id="addPageToBookmark">
+      <svg viewBox="0 0 24 24" width="16" height="16">
+        <path fill="currentColor" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+      </svg>
+      添加当前页到书签
+    </div>
+  </div>
+
+  <!-- 添加页面到书签弹窗 -->
+  <div class="modal" id="addPageBookmarkModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="addPageBookmarkTitle">添加页面到书签</h3>
+        <button class="close-btn" id="closeAddPageBookmarkBtn">
+          <svg viewBox="0 0 24 24" width="24" height="24">
+            <path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="pageBookmarkName">名称</label>
+          <input type="text" id="pageBookmarkName" placeholder="网站名称">
+        </div>
+        <div class="form-group">
+          <label for="pageBookmarkUrl">网址</label>
+          <input type="text" id="pageBookmarkUrl" placeholder="https://example.com" readonly>
+        </div>
+        <div class="form-group">
+          <label>页面类型</label>
+          <div class="page-type-options">
+            <label class="radio-option">
+              <input type="radio" name="pageBookmarkType" value="normal" checked>
+              <span class="radio-label">普通页面</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="pageBookmarkType" value="private">
+              <span class="radio-label">隐私页面</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="pageBookmarkPartition">选择工作区</label>
+          <select id="pageBookmarkPartition">
+            <!-- 动态生成工作区选项 -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="pageBookmarkFolder">选择文件夹</label>
+          <select id="pageBookmarkFolder">
+            <option value="">无（根目录）</option>
+            <!-- 动态生成文件夹选项 -->
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelAddPageBookmarkBtn">取消</button>
+        <button class="btn btn-primary" id="saveAddPageBookmarkBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 添加/编辑分区弹窗 -->
   <div class="modal" id="partitionModal">
     <div class="modal-content">

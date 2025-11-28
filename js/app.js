@@ -132,6 +132,17 @@
     partitionContextMenu: $('#partitionContextMenu'),
     editPartition: $('#editPartition'),
     deletePartition: $('#deletePartition'),
+    // 页面右键菜单相关
+    pageContextMenu: $('#pageContextMenu'),
+    addPageToBookmark: $('#addPageToBookmark'),
+    addPageBookmarkModal: $('#addPageBookmarkModal'),
+    closeAddPageBookmarkBtn: $('#closeAddPageBookmarkBtn'),
+    pageBookmarkName: $('#pageBookmarkName'),
+    pageBookmarkUrl: $('#pageBookmarkUrl'),
+    pageBookmarkPartition: $('#pageBookmarkPartition'),
+    pageBookmarkFolder: $('#pageBookmarkFolder'),
+    cancelAddPageBookmarkBtn: $('#cancelAddPageBookmarkBtn'),
+    saveAddPageBookmarkBtn: $('#saveAddPageBookmarkBtn'),
     // 同步面板
     syncBtn: $('#syncBtn'),
     syncPanel: $('#syncPanel'),
@@ -269,6 +280,9 @@
 
     // 启动时钟
     setInterval(updateTime, 1000);
+
+    // 检查是否有待添加的书签（从右键菜单添加）
+    checkPendingBookmark();
   }
 
   // 确保两个区域都有默认工作区
@@ -1275,9 +1289,32 @@
     elements.contextMenu.classList.remove('show');
     elements.folderContextMenu.classList.remove('show');
     elements.partitionContextMenu.classList.remove('show');
+    elements.pageContextMenu.classList.remove('show');
     state.contextMenuTargetId = null;
     state.folderContextMenuTargetId = null;
     partitionContextMenuTargetId = null;
+  }
+
+  // 显示页面右键菜单
+  function showPageContextMenu(x, y) {
+    hideAllContextMenus();
+    
+    // 调整菜单位置，确保不超出屏幕
+    const menuWidth = 180;
+    const menuHeight = 50;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (x + menuWidth > viewportWidth) {
+      x = viewportWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > viewportHeight) {
+      y = viewportHeight - menuHeight - 10;
+    }
+    
+    elements.pageContextMenu.style.left = x + 'px';
+    elements.pageContextMenu.style.top = y + 'px';
+    elements.pageContextMenu.classList.add('show');
   }
 
   // 默认搜索引擎图标 (SVG base64)
@@ -2740,6 +2777,52 @@
     elements.syncDownloadBtn.addEventListener('click', downloadData);
     elements.syncRefreshBtn.addEventListener('click', loadBackupList);
 
+    // 页面右键菜单 - 空白处右键添加书签
+    document.addEventListener('contextmenu', (e) => {
+      // 检查是否点击在空白区域（不是书签、文件夹、按钮等元素上）
+      const target = e.target;
+      const isOnInteractiveElement = target.closest('.shortcut-item') ||
+                                      target.closest('.folder-item') ||
+                                      target.closest('.partition-tab') ||
+                                      target.closest('.action-btn') ||
+                                      target.closest('.modal') ||
+                                      target.closest('.settings-panel') ||
+                                      target.closest('.sync-panel') ||
+                                      target.closest('.search-box') ||
+                                      target.closest('.context-menu') ||
+                                      target.closest('button') ||
+                                      target.closest('input') ||
+                                      target.closest('select');
+      
+      if (!isOnInteractiveElement) {
+        e.preventDefault();
+        showPageContextMenu(e.clientX, e.clientY);
+      }
+    });
+
+    // 页面右键菜单 - 添加当前页到书签
+    elements.addPageToBookmark.addEventListener('click', () => {
+      hideAllContextMenus();
+      openAddPageBookmarkModal();
+    });
+
+    // 添加页面到书签弹窗事件
+    elements.closeAddPageBookmarkBtn.addEventListener('click', closeAddPageBookmarkModal);
+    elements.cancelAddPageBookmarkBtn.addEventListener('click', closeAddPageBookmarkModal);
+    elements.saveAddPageBookmarkBtn.addEventListener('click', savePageBookmark);
+
+    // 页面类型切换时更新工作区和文件夹列表
+    document.querySelectorAll('input[name="pageBookmarkType"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        updatePageBookmarkSelectors();
+      });
+    });
+
+    // 工作区切换时更新文件夹列表
+    elements.pageBookmarkPartition.addEventListener('change', () => {
+      updatePageBookmarkFolders();
+    });
+
     // ESC关闭弹窗和面板
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -2748,6 +2831,7 @@
         closeEngineModal();
         closePartitionModal();
         closeBackupPreviewModal();
+        closeAddPageBookmarkModal();
         elements.settingsPanel.classList.remove('show');
         elements.syncPanel.classList.remove('active');
         hideAllContextMenus();
@@ -2939,6 +3023,187 @@
     menu.style.left = x + 'px';
     menu.style.top = y + 'px';
     menu.classList.add('show');
+  }
+
+  // ========== 页面右键添加书签功能 ==========
+
+  // 检查是否有待添加的书签（从浏览器右键菜单添加）
+  function checkPendingBookmark() {
+    // 检查URL参数
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') !== 'addBookmark') {
+      return;
+    }
+
+    // 从background脚本获取待添加的书签信息
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.sendMessage({ type: 'getPendingBookmark' }, (pendingBookmark) => {
+        if (pendingBookmark) {
+          // 填充书签信息
+          elements.pageBookmarkName.value = pendingBookmark.title || '';
+          elements.pageBookmarkUrl.value = pendingBookmark.url || '';
+          
+          // 设置页面类型
+          const typeValue = pendingBookmark.isPrivate ? 'private' : 'normal';
+          const typeRadio = document.querySelector(`input[name="pageBookmarkType"][value="${typeValue}"]`);
+          if (typeRadio) {
+            typeRadio.checked = true;
+          }
+
+          // 更新工作区和文件夹选择器
+          updatePageBookmarkSelectors();
+
+          // 打开弹窗
+          elements.addPageBookmarkModal.classList.add('show');
+          elements.pageBookmarkName.focus();
+
+          // 清除URL参数，防止刷新后重复弹窗
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      });
+    }
+  }
+
+  // 打开添加页面书签弹窗
+  function openAddPageBookmarkModal() {
+    // 获取当前页面信息（在扩展环境中）
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          const currentTab = tabs[0];
+          elements.pageBookmarkName.value = currentTab.title || '';
+          elements.pageBookmarkUrl.value = currentTab.url || '';
+        }
+      });
+    } else {
+      // 普通网页环境，使用当前页面信息
+      elements.pageBookmarkName.value = document.title || '';
+      elements.pageBookmarkUrl.value = window.location.href || '';
+    }
+
+    // 默认选择普通页面
+    document.querySelector('input[name="pageBookmarkType"][value="normal"]').checked = true;
+
+    // 更新工作区和文件夹选择器
+    updatePageBookmarkSelectors();
+
+    elements.addPageBookmarkModal.classList.add('show');
+    elements.pageBookmarkName.focus();
+  }
+
+  // 关闭添加页面书签弹窗
+  function closeAddPageBookmarkModal() {
+    elements.addPageBookmarkModal.classList.remove('show');
+    elements.pageBookmarkName.value = '';
+    elements.pageBookmarkUrl.value = '';
+  }
+
+  // 更新页面书签选择器（工作区和文件夹）
+  function updatePageBookmarkSelectors() {
+    const isPrivate = document.querySelector('input[name="pageBookmarkType"]:checked').value === 'private';
+    
+    // 更新工作区选择器
+    const partitionSelect = elements.pageBookmarkPartition;
+    partitionSelect.innerHTML = '';
+    
+    // 过滤出对应类型的分区
+    const filteredPartitions = state.partitions.filter(p => !!p.isPrivate === isPrivate);
+    filteredPartitions.sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    filteredPartitions.forEach(partition => {
+      const option = document.createElement('option');
+      option.value = partition.id;
+      option.textContent = partition.name;
+      // 默认选中当前区域的活动工作区
+      const currentId = isPrivate ? state.currentPrivatePartition : state.currentPartition;
+      if (partition.id === currentId) {
+        option.selected = true;
+      }
+      partitionSelect.appendChild(option);
+    });
+
+    // 更新文件夹选择器
+    updatePageBookmarkFolders();
+  }
+
+  // 更新页面书签文件夹选择器
+  function updatePageBookmarkFolders() {
+    const isPrivate = document.querySelector('input[name="pageBookmarkType"]:checked').value === 'private';
+    const partitionId = parseInt(elements.pageBookmarkPartition.value);
+    
+    const folderSelect = elements.pageBookmarkFolder;
+    folderSelect.innerHTML = '<option value="">无（根目录）</option>';
+    
+    // 过滤出对应分区的文件夹
+    const filteredFolders = state.folders.filter(f => 
+      !!f.isPrivate === isPrivate && 
+      (f.partitionId === partitionId || (!f.partitionId && partitionId === (isPrivate ? state.currentPrivatePartition : state.currentPartition)))
+    );
+    
+    filteredFolders.forEach(folder => {
+      const option = document.createElement('option');
+      option.value = folder.id;
+      option.textContent = folder.name;
+      folderSelect.appendChild(option);
+    });
+  }
+
+  // 保存页面书签
+  async function savePageBookmark() {
+    const name = elements.pageBookmarkName.value.trim();
+    const url = elements.pageBookmarkUrl.value.trim();
+    const isPrivate = document.querySelector('input[name="pageBookmarkType"]:checked').value === 'private';
+    const partitionId = parseInt(elements.pageBookmarkPartition.value);
+    const folderId = elements.pageBookmarkFolder.value ? parseInt(elements.pageBookmarkFolder.value) : null;
+
+    if (!name) {
+      alert('请填写书签名称');
+      return;
+    }
+
+    if (!url) {
+      alert('请填写网址');
+      return;
+    }
+
+    // 生成新ID
+    const maxId = state.shortcuts.reduce((max, s) => Math.max(max, s.id), 0);
+    
+    // 计算排序顺序
+    let order = 0;
+    if (folderId) {
+      // 在文件夹内，获取该文件夹内最大的order
+      const folderShortcuts = state.shortcuts.filter(s => s.folderId === folderId);
+      order = folderShortcuts.reduce((max, s) => Math.max(max, s.order || 0), 0) + 1;
+    } else {
+      // 在根目录，获取根目录最大的order
+      const rootShortcuts = state.shortcuts.filter(s => !s.folderId && s.partitionId === partitionId && !!s.isPrivate === isPrivate);
+      order = rootShortcuts.reduce((max, s) => Math.max(max, s.order || 0), 0) + 1;
+    }
+
+    const newShortcut = {
+      id: maxId + 1,
+      name,
+      url,
+      icon: '',
+      folderId,
+      partitionId,
+      isPrivate,
+      order
+    };
+
+    state.shortcuts.push(newShortcut);
+    await Storage.set('shortcuts', state.shortcuts);
+
+    closeAddPageBookmarkModal();
+    renderShortcuts();
+
+    // 提示成功
+    const typeText = isPrivate ? '隐私' : '普通';
+    const partition = state.partitions.find(p => p.id === partitionId);
+    const folder = folderId ? state.folders.find(f => f.id === folderId) : null;
+    const locationText = folder ? `"${folder.name}"文件夹` : '根目录';
+    console.log(`书签已添加到${typeText}页面 > ${partition?.name || '默认工作区'} > ${locationText}`);
   }
 
   // ========== 云同步功能 ==========
