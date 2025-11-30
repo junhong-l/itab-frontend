@@ -1476,6 +1476,12 @@ body.multi-select-mode .shortcut-item.selected {
   color: var(--text-secondary);
 }
 
+.form-group label .label-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: normal;
+}
+
 .form-group input[type="text"] {
   width: 100%;
   padding: 12px;

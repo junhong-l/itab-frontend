@@ -35,6 +35,7 @@
     saveShortcutBtn: $('#saveShortcutBtn'),
     shortcutName: $('#shortcutName'),
     shortcutUrl: $('#shortcutUrl'),
+    shortcutIcon: $('#shortcutIcon'),
     shortcutFolder: $('#shortcutFolder'),
     modalTitle: $('#modalTitle'),
     // 文件夹弹窗
@@ -257,6 +258,8 @@
     privateMode: false,
     // 文件夹拖拽排序
     draggingFolderId: null,
+    // 拖拽书签是否是钉住显示的
+    draggingIsPinned: false,
     // 同步状态
     syncConnected: false,
     syncConfig: null,
@@ -274,6 +277,66 @@
     encryptKeyResolve: null,
     encryptKeyReject: null
   };
+
+  // 加载图片并压缩为 base64（最大 64x64，质量 0.8）
+  async function loadAndCompressIcon(iconUrl, maxSize = 64) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous'; // 允许跨域
+      
+      img.onload = () => {
+        try {
+          // 计算缩放后的尺寸
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round(height * maxSize / width);
+              width = maxSize;
+            } else {
+              width = Math.round(width * maxSize / height);
+              height = maxSize;
+            }
+          }
+          
+          // 创建 canvas 进行压缩
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // 转换为 base64，使用 webp 格式压缩（如果支持），否则用 png
+          let dataUrl;
+          try {
+            dataUrl = canvas.toDataURL('image/webp', 0.8);
+            // 某些浏览器不支持 webp，会返回 png
+            if (!dataUrl.startsWith('data:image/webp')) {
+              dataUrl = canvas.toDataURL('image/png');
+            }
+          } catch (e) {
+            dataUrl = canvas.toDataURL('image/png');
+          }
+          
+          resolve(dataUrl);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      
+      img.onerror = () => {
+        reject(new Error('图片加载失败'));
+      };
+      
+      // 设置超时
+      setTimeout(() => {
+        reject(new Error('图片加载超时'));
+      }, 10000);
+      
+      img.src = iconUrl;
+    });
+  }
 
   // AES 加密函数（使用 Web Crypto API）
   async function deriveKey(password, salt) {
@@ -639,9 +702,9 @@
     
     const rootGrid = document.createElement('div');
     rootGrid.className = 'shortcuts-grid';
-    rootGrid.dataset.area = 'root'; // 标记为根目录区域
+    rootGrid.dataset.area = 'pinned'; // 标记为常用（钉住）区域
     
-    // 根目录拖放事件 - 支持排序和移入
+    // 常用区域拖放事件 - 只支持钉住书签的排序
     rootGrid.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -651,27 +714,17 @@
         el.classList.remove('drag-before', 'drag-after');
       });
       
-      // 如果拖拽的是根目录书签，显示排序指示
-      if (state.draggingShortcutId) {
-        const draggingShortcut = state.shortcuts.find(s => s.id === state.draggingShortcutId);
-        if (draggingShortcut && !draggingShortcut.folderId) {
-          // 是根目录书签，处理排序
-          const afterElement = getDragAfterElementInGrid(rootGrid, e.clientX, e.clientY);
-          
-          if (afterElement && parseInt(afterElement.dataset.id) !== state.draggingShortcutId) {
-            afterElement.classList.add('drag-before');
-          }
-          return;
+      // 只处理钉住书签的拖动排序
+      if (state.draggingIsPinned && state.draggingShortcutId) {
+        const afterElement = getDragAfterElementInGrid(rootGrid, e.clientX, e.clientY);
+        if (afterElement && parseInt(afterElement.dataset.id) !== state.draggingShortcutId) {
+          afterElement.classList.add('drag-before');
         }
       }
-      
-      // 其他书签拖入根目录
-      rootContainer.classList.add('drag-over');
     });
 
     rootGrid.addEventListener('dragleave', (e) => {
       if (!rootGrid.contains(e.relatedTarget)) {
-        rootContainer.classList.remove('drag-over');
         rootGrid.querySelectorAll('.shortcut-item').forEach(el => {
           el.classList.remove('drag-before', 'drag-after');
         });
@@ -680,7 +733,6 @@
 
     rootGrid.addEventListener('drop', async (e) => {
       e.preventDefault();
-      rootContainer.classList.remove('drag-over');
       rootGrid.querySelectorAll('.shortcut-item').forEach(el => {
         el.classList.remove('drag-before', 'drag-after');
       });
@@ -688,39 +740,19 @@
       const shortcutId = parseInt(e.dataTransfer.getData('text/plain'));
       if (!shortcutId) return;
       
-      const draggingShortcut = state.shortcuts.find(s => s.id === shortcutId);
-      if (!draggingShortcut) return;
-      
-      // 判断是排序还是移入
-      if (!draggingShortcut.folderId || draggingShortcut.folderId === null) {
-        // 根目录内排序
+      // 只处理钉住书签的排序
+      if (state.draggingIsPinned) {
         const afterElement = getDragAfterElementInGrid(rootGrid, e.clientX, e.clientY);
         const beforeId = afterElement ? parseInt(afterElement.dataset.id) : null;
-        await reorderShortcutInRoot(shortcutId, beforeId);
-      } else {
-        // 从文件夹移到根目录
-        await moveShortcutToFolder(shortcutId, null);
-        if (state.openFolderId) {
-          openFolderPopup(state.openFolderId);
-        }
+        await reorderPinnedShortcuts(shortcutId, beforeId);
       }
     });
     
-    // 先渲染根目录的快捷方式（无文件夹的大图标）
-    // 根据隐私模式和分区过滤书签
+    // 获取当前分区ID
     const currentPartitionId = getCurrentPartitionId();
-    const rootShortcuts = state.shortcuts.filter(s => {
-      if (s.folderId) return false; // 不在根目录
-      // 隐私模式显示隐私书签，普通模式显示普通书签
-      if (!!s.isPrivate !== state.privateMode) return false;
-      // 分区过滤
-      if (s.partitionId && s.partitionId !== currentPartitionId) return false;
-      return true;
-    });
     
-    // 获取被钉住的书签（在文件夹内但被钉住的）
+    // 获取被钉住的书签（用于常用区域显示）
     const pinnedShortcuts = state.shortcuts.filter(s => {
-      if (!s.folderId) return false; // 必须在文件夹内
       if (!s.isPinned) return false; // 必须被钉住
       // 隐私模式显示隐私书签，普通模式显示普通书签
       if (!!s.isPrivate !== state.privateMode) return false;
@@ -729,18 +761,19 @@
       return true;
     });
     
-    // 先渲染根目录书签
-    rootShortcuts.forEach(shortcut => {
-      rootGrid.appendChild(createShortcutElement(shortcut));
-    });
+    // 按 pinnedOrder 排序钉住的书签
+    pinnedShortcuts.sort((a, b) => (a.pinnedOrder || 0) - (b.pinnedOrder || 0));
     
-    // 再渲染被钉住的书签（带特殊标记）
-    pinnedShortcuts.forEach(shortcut => {
-      rootGrid.appendChild(createShortcutElement(shortcut, false, true));
-    });
-    
-    rootContainer.appendChild(rootGrid);
-    elements.shortcutsSection.appendChild(rootContainer);
+    // 只有有钉住的书签时才显示常用区域
+    if (pinnedShortcuts.length > 0) {
+      // 渲染被钉住的书签（带特殊标记）
+      pinnedShortcuts.forEach(shortcut => {
+        rootGrid.appendChild(createShortcutElement(shortcut, false, true));
+      });
+      
+      rootContainer.appendChild(rootGrid);
+      elements.shortcutsSection.appendChild(rootContainer);
+    }
 
     // 创建文件夹区域（包含分区标签）
     const foldersContainer = document.createElement('div');
@@ -752,22 +785,120 @@
     
     // 根据隐私模式和分区过滤文件夹
     const visibleFolders = filterFolders(state.folders);
+    
+    // 获取不在文件夹的独立书签（显示在工作区）
+    // 注意：钉住的书签不在这里显示，它们显示在常用区域
+    const standaloneShortcuts = state.shortcuts.filter(s => {
+      if (s.folderId) return false; // 不在文件夹内的
+      if (s.isPinned) return false; // 钉住的显示在常用区域，不在工作区显示
+      // 隐私模式显示隐私书签，普通模式显示普通书签
+      if (!!s.isPrivate !== state.privateMode) return false;
+      // 分区过滤
+      if (s.partitionId && s.partitionId !== currentPartitionId) return false;
+      return true;
+    });
 
-    if (visibleFolders.length > 0) {
-      const foldersGrid = document.createElement('div');
-      foldersGrid.className = 'shortcuts-grid';
+    // 创建工作区网格
+    const foldersGrid = document.createElement('div');
+    foldersGrid.className = 'shortcuts-grid';
+    foldersGrid.dataset.area = 'workspace'; // 标记为工作区
+    
+    // 工作区拖放事件 - 支持独立书签排序和从文件夹移出
+    foldersGrid.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
       
-      visibleFolders.forEach(folder => {
-        const folderShortcuts = state.shortcuts.filter(s => s.folderId === folder.id);
-        foldersGrid.appendChild(createFolderElement(folder, folderShortcuts));
+      // 清除之前的指示
+      foldersGrid.querySelectorAll('.shortcut-item').forEach(el => {
+        el.classList.remove('drag-before', 'drag-after');
       });
       
+      // 不处理钉住书签的拖动
+      if (state.draggingIsPinned) {
+        return;
+      }
+      
+      // 如果拖拽的是独立书签（不在文件夹内），显示排序指示
+      if (state.draggingShortcutId) {
+        const draggingShortcut = state.shortcuts.find(s => s.id === state.draggingShortcutId);
+        if (draggingShortcut && !draggingShortcut.folderId) {
+          // 是独立书签，处理排序
+          const afterElement = getDragAfterElementInGrid(foldersGrid, e.clientX, e.clientY);
+          
+          if (afterElement && afterElement.classList.contains('shortcut-item') && 
+              parseInt(afterElement.dataset.id) !== state.draggingShortcutId) {
+            afterElement.classList.add('drag-before');
+          }
+          return;
+        }
+      }
+      
+      // 其他书签拖入工作区（从文件夹移出）
+      foldersContainer.classList.add('drag-over');
+    });
+
+    foldersGrid.addEventListener('dragleave', (e) => {
+      if (!foldersGrid.contains(e.relatedTarget)) {
+        foldersContainer.classList.remove('drag-over');
+        foldersGrid.querySelectorAll('.shortcut-item').forEach(el => {
+          el.classList.remove('drag-before', 'drag-after');
+        });
+      }
+    });
+
+    foldersGrid.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      foldersContainer.classList.remove('drag-over');
+      foldersGrid.querySelectorAll('.shortcut-item').forEach(el => {
+        el.classList.remove('drag-before', 'drag-after');
+      });
+      
+      const shortcutId = parseInt(e.dataTransfer.getData('text/plain'));
+      if (!shortcutId) return;
+      
+      // 不处理钉住书签的拖动
+      if (state.draggingIsPinned) {
+        return;
+      }
+      
+      const draggingShortcut = state.shortcuts.find(s => s.id === shortcutId);
+      if (!draggingShortcut) return;
+      
+      // 判断是排序还是移入
+      if (!draggingShortcut.folderId || draggingShortcut.folderId === null) {
+        // 独立书签内排序
+        const afterElement = getDragAfterElementInGrid(foldersGrid, e.clientX, e.clientY);
+        // 只对书签元素进行排序，跳过文件夹
+        const beforeId = (afterElement && afterElement.classList.contains('shortcut-item')) ? 
+                         parseInt(afterElement.dataset.id) : null;
+        await reorderShortcutInRoot(shortcutId, beforeId);
+      } else {
+        // 从文件夹移到工作区（变成独立书签）
+        await moveShortcutToFolder(shortcutId, null);
+        if (state.openFolderId) {
+          openFolderPopup(state.openFolderId);
+        }
+      }
+    });
+    
+    // 先渲染独立书签
+    standaloneShortcuts.forEach(shortcut => {
+      foldersGrid.appendChild(createShortcutElement(shortcut));
+    });
+    
+    // 再渲染文件夹
+    visibleFolders.forEach(folder => {
+      const folderShortcuts = state.shortcuts.filter(s => s.folderId === folder.id);
+      foldersGrid.appendChild(createFolderElement(folder, folderShortcuts));
+    });
+    
+    if (standaloneShortcuts.length > 0 || visibleFolders.length > 0) {
       foldersContainer.appendChild(foldersGrid);
     } else {
-      // 即使没有文件夹也显示空状态提示
+      // 显示空状态提示
       const emptyTip = document.createElement('div');
       emptyTip.className = 'folders-empty-tip';
-      emptyTip.textContent = '当前分区暂无文件夹';
+      emptyTip.textContent = '当前分区暂无内容';
       foldersContainer.appendChild(emptyTip);
     }
     
@@ -1171,6 +1302,51 @@
     renderShortcuts();
   }
 
+  // 重新排序钉住的书签（在常用区域显示的）
+  async function reorderPinnedShortcuts(draggedId, targetId, insertBefore) {
+    const currentPartitionId = getCurrentPartitionId();
+    
+    // 获取当前分区的钉住书签
+    const pinnedShortcuts = state.shortcuts.filter(s => {
+      if (!s.isPinned) return false; // 必须被钉住
+      if (!!s.isPrivate !== state.privateMode) return false;
+      if (s.partitionId && s.partitionId !== currentPartitionId) return false;
+      return true;
+    });
+    
+    // 其他书签（非钉住的或不在当前分区的）
+    const otherShortcuts = state.shortcuts.filter(s => {
+      if (!s.isPinned) return true; // 非钉住的
+      if (!!s.isPrivate !== state.privateMode) return true;
+      if (s.partitionId && s.partitionId !== currentPartitionId) return true;
+      return false;
+    });
+    
+    const draggedIndex = pinnedShortcuts.findIndex(s => s.id === draggedId);
+    if (draggedIndex === -1) return;
+    
+    const [draggedShortcut] = pinnedShortcuts.splice(draggedIndex, 1);
+    
+    let targetIndex = pinnedShortcuts.findIndex(s => s.id === targetId);
+    if (targetIndex === -1) {
+      pinnedShortcuts.push(draggedShortcut);
+    } else {
+      if (!insertBefore) {
+        targetIndex += 1;
+      }
+      pinnedShortcuts.splice(targetIndex, 0, draggedShortcut);
+    }
+    
+    // 为钉住的书签设置 order 值来保持顺序
+    pinnedShortcuts.forEach((s, index) => {
+      s.pinnedOrder = index;
+    });
+    
+    state.shortcuts = [...otherShortcuts, ...pinnedShortcuts];
+    await Storage.set('shortcuts', state.shortcuts);
+    renderShortcuts();
+  }
+
   // 获取网格内拖拽后应该插入的位置
   function getDragAfterElementInGrid(container, x, y) {
     const draggableElements = [...container.querySelectorAll('.shortcut-item:not(.dragging)')];
@@ -1217,9 +1393,10 @@
     item.className = 'shortcut-item';
     if (isPinnedDisplay) {
       item.classList.add('pinned');
+      item.dataset.pinned = 'true'; // 用于拖放时识别
     }
     item.dataset.id = shortcut.id;
-    item.draggable = !isPinnedDisplay; // 钉住显示的书签不能拖动
+    item.draggable = true; // 所有书签都允许拖拽
     item.title = shortcut.name; // 鼠标悬停显示完整名称
 
     const icon = document.createElement('div');
@@ -1272,28 +1449,33 @@
       const draggingShortcut = state.shortcuts.find(s => s.id === state.draggingShortcutId);
       if (!draggingShortcut) return;
       
-      // 钉住显示的书签不参与排序
-      if (isPinnedDisplay) return;
+      // 获取拖拽源是否是钉住显示的书签
+      const draggingElement = document.querySelector(`.shortcut-item[data-id="${state.draggingShortcutId}"]`);
+      const isDraggingPinned = draggingElement?.dataset.pinned === 'true';
       
-      // 两个书签的 folderId 相同才能排序
-      if (draggingShortcut.folderId === shortcut.folderId) {
-        const box = item.getBoundingClientRect();
-        const centerX = box.left + box.width / 2;
-        
-        // 清除其他书签的指示
-        const container = item.parentElement;
-        if (container) {
-          container.querySelectorAll('.shortcut-item').forEach(el => {
-            el.classList.remove('drag-before', 'drag-after');
-          });
-        }
-        
-        // 根据鼠标位置显示左侧或右侧指示
-        if (e.clientX < centerX) {
-          item.classList.add('drag-before');
-        } else {
-          item.classList.add('drag-after');
-        }
+      // 钉住的书签只能和钉住的书签排序，普通书签只能和普通书签排序
+      if (isPinnedDisplay !== isDraggingPinned) return;
+      
+      // 钉住书签之间可以排序，普通书签需要 folderId 相同才能排序
+      const canSort = isPinnedDisplay || (draggingShortcut.folderId === shortcut.folderId);
+      if (!canSort) return;
+      
+      const box = item.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      
+      // 清除其他书签的指示
+      const container = item.parentElement;
+      if (container) {
+        container.querySelectorAll('.shortcut-item').forEach(el => {
+          el.classList.remove('drag-before', 'drag-after');
+        });
+      }
+      
+      // 根据鼠标位置显示左侧或右侧指示
+      if (e.clientX < centerX) {
+        item.classList.add('drag-before');
+      } else {
+        item.classList.add('drag-after');
       }
     });
 
@@ -1302,9 +1484,6 @@
     });
 
     item.addEventListener('drop', async (e) => {
-      // 钉住显示的书签不接受拖放
-      if (isPinnedDisplay) return;
-      
       e.preventDefault();
       e.stopPropagation();
       
@@ -1316,19 +1495,26 @@
       const draggingShortcut = state.shortcuts.find(s => s.id === draggedId);
       if (!draggingShortcut) return;
       
-      // 两个书签的 folderId 相同才能排序
-      if (draggingShortcut.folderId === shortcut.folderId) {
-        const box = item.getBoundingClientRect();
-        const centerX = box.left + box.width / 2;
-        const insertBefore = e.clientX < centerX;
-        
-        if (shortcut.folderId) {
-          // 在文件夹内排序
-          await reorderShortcutInFolder(draggedId, shortcut.folderId, insertBefore ? shortcut.id : null);
-        } else {
-          // 在根目录排序
-          await reorderShortcutInRootRelative(draggedId, shortcut.id, insertBefore);
-        }
+      // 获取拖拽源是否是钉住显示的书签
+      const draggingElement = document.querySelector(`.shortcut-item.dragging`);
+      const isDraggingPinned = draggingElement?.dataset.pinned === 'true';
+      
+      // 钉住的书签只能和钉住的书签排序
+      if (isPinnedDisplay !== isDraggingPinned) return;
+      
+      const box = item.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      const insertBefore = e.clientX < centerX;
+      
+      if (isPinnedDisplay) {
+        // 钉住书签之间排序
+        await reorderPinnedShortcuts(draggedId, shortcut.id, insertBefore);
+      } else if (shortcut.folderId) {
+        // 在文件夹内排序
+        await reorderShortcutInFolder(draggedId, shortcut.folderId, insertBefore ? shortcut.id : null);
+      } else {
+        // 在根目录排序
+        await reorderShortcutInRootRelative(draggedId, shortcut.id, insertBefore);
       }
     });
 
@@ -1338,6 +1524,9 @@
       e.dataTransfer.effectAllowed = 'move';
       item.classList.add('dragging');
       state.draggingShortcutId = shortcut.id;
+      
+      // 记录是否是钉住显示的书签
+      state.draggingIsPinned = isPinnedDisplay;
       
       if (inFolderPopup) {
         // 在文件夹弹窗内，记录来源文件夹但不立即关闭
@@ -1375,6 +1564,7 @@
       document.body.classList.remove('is-dragging');
       state.draggingShortcutId = null;
       state.draggingFromFolderId = null;
+      state.draggingIsPinned = false;
       // 移除所有拖拽悬停状态
       document.querySelectorAll('.drag-over, .drag-before, .drag-after').forEach(el => {
         el.classList.remove('drag-over', 'drag-before', 'drag-after');
@@ -1444,12 +1634,12 @@
     hideAllContextMenus();
     state.contextMenuTargetId = id;
     
-    // 获取书签信息，判断是否在文件夹内
+    // 获取书签信息，判断钉住状态
     const shortcut = state.shortcuts.find(s => s.id === id);
     const pinItem = document.getElementById('pinShortcut');
     
-    if (shortcut && shortcut.folderId) {
-      // 在文件夹内的书签，显示"钉到常用"选项
+    if (shortcut) {
+      // 所有书签都可以钉到常用
       if (shortcut.isPinned) {
         pinItem.textContent = '取消钉住';
       } else {
@@ -1457,7 +1647,6 @@
       }
       pinItem.style.display = 'block';
     } else {
-      // 根目录的书签，隐藏"钉到常用"选项
       pinItem.style.display = 'none';
     }
     
@@ -1881,12 +2070,15 @@
         elements.modalTitle.textContent = '编辑快捷方式';
         elements.shortcutName.value = shortcut.name;
         elements.shortcutUrl.value = shortcut.url;
+        // 显示图标地址（如果是 data:image 格式则显示为空，提示用户可以重新设置）
+        elements.shortcutIcon.value = shortcut.icon && !shortcut.icon.startsWith('data:') ? shortcut.icon : '';
         updateFolderSelect(shortcut.folderId);
       }
     } else {
       elements.modalTitle.textContent = '添加快捷方式';
       elements.shortcutName.value = '';
       elements.shortcutUrl.value = '';
+      elements.shortcutIcon.value = '';
     }
     elements.shortcutModal.classList.add('show');
   }
@@ -1901,6 +2093,7 @@
   async function saveShortcut() {
     const name = elements.shortcutName.value.trim();
     let url = elements.shortcutUrl.value.trim();
+    let iconUrl = elements.shortcutIcon.value.trim();
     const folderId = elements.shortcutFolder.value ? parseInt(elements.shortcutFolder.value) : null;
 
     if (!name || !url) {
@@ -1913,6 +2106,19 @@
       url = 'https://' + url;
     }
 
+    // 处理图标
+    let iconData = '';
+    if (iconUrl) {
+      // 用户填写了图标地址，尝试加载并压缩
+      try {
+        iconData = await loadAndCompressIcon(iconUrl);
+      } catch (e) {
+        console.warn('图标加载失败，将使用默认图标:', e.message);
+        // 加载失败时保留原始 URL，让渲染时使用 favicon 服务
+        iconData = '';
+      }
+    }
+
     if (state.editingShortcutId) {
       // 编辑
       const index = state.shortcuts.findIndex(s => s.id === state.editingShortcutId);
@@ -1920,6 +2126,10 @@
         state.shortcuts[index].name = name;
         state.shortcuts[index].url = url;
         state.shortcuts[index].folderId = folderId;
+        // 如果有新图标则更新，否则保留原图标
+        if (iconUrl) {
+          state.shortcuts[index].icon = iconData;
+        }
         // 编辑时保持原有的隐私属性和分区
       }
     } else {
@@ -1929,7 +2139,7 @@
         id: maxId + 1,
         name,
         url,
-        icon: '',
+        icon: iconData,
         folderId,
         partitionId: getCurrentPartitionId(), // 添加到当前分区
         isPrivate: state.privateMode // 根据当前模式决定是否为隐私书签
@@ -1941,15 +2151,20 @@
     closeShortcutModal();
   }
 
-  // 删除快捷方式
+  // 删除书签
   async function deleteShortcut(id) {
-    const confirmed = await showConfirm('确定要删除这个快捷方式吗？');
+    const confirmed = await showConfirm('确定要删除这个书签吗？');
     if (!confirmed) return;
 
+    hideAllContextMenus();
     state.shortcuts = state.shortcuts.filter(s => s.id !== id);
     await Storage.set('shortcuts', state.shortcuts);
     renderShortcuts();
-    hideAllContextMenus();
+    
+    // 如果文件夹弹窗打开，刷新弹窗内容
+    if (state.openFolderId) {
+      openFolderPopup(state.openFolderId);
+    }
   }
 
   // 打开文件夹弹窗
@@ -2942,6 +3157,7 @@
     document.addEventListener('dragend', () => {
       document.body.classList.remove('is-dragging');
       state.draggingFromFolderId = null;
+      state.draggingIsPinned = false;
       document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
     });
 
