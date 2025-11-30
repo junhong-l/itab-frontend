@@ -7,6 +7,9 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// 存储待保存的密码信息（tabId -> pendingData）
+const pendingPasswordPrompts = new Map();
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'addToBookmark') {
     let url, title;
@@ -92,6 +95,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'pendingPassword') {
     const data = message.data;
+    const tabId = sender.tab?.id;
     
     chrome.storage.local.get(['passwords'], (result) => {
       const passwords = result.passwords || [];
@@ -103,23 +107,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                p.username === data.username;
       });
       
+      let promptData;
       if (existing) {
         if (existing.password !== data.password) {
-          showPasswordNotification('update', {
-            id: existing.id,
+          promptData = {
+            type: 'update',
+            data: {
+              id: existing.id,
+              username: data.username,
+              password: data.password,
+              url: data.url,
+              title: data.title
+            }
+          };
+        }
+      } else {
+        promptData = {
+          type: 'new',
+          data: {
             username: data.username,
             password: data.password,
             url: data.url,
             title: data.title
-          });
-        }
-      } else {
-        showPasswordNotification('new', {
-          username: data.username,
-          password: data.password,
-          url: data.url,
-          title: data.title
+          }
+        };
+      }
+      
+      if (promptData && tabId) {
+        // 存储待显示的密码提示，等页面加载完成后显示
+        pendingPasswordPrompts.set(tabId, {
+          ...promptData,
+          timestamp: Date.now()
         });
+        
+        // 同时尝试立即显示（如果页面没有跳转）
+        setTimeout(() => {
+          showPasswordNotificationForTab(tabId);
+        }, 500);
       }
     });
     
@@ -165,7 +189,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  
+  // 清除指定标签页的待显示密码提示
+  if (message.type === 'clearPendingPasswordPrompt') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      pendingPasswordPrompts.delete(tabId);
+    }
+    sendResponse({ success: true });
+    return false;
+  }
 });
+
+// 监听标签页更新，当页面加载完成后显示密码保存提示
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && pendingPasswordPrompts.has(tabId)) {
+    // 页面加载完成，延迟一点显示提示，确保页面已经稳定
+    setTimeout(() => {
+      showPasswordNotificationForTab(tabId);
+    }, 800);
+  }
+});
+
+// 监听标签页关闭，清理待显示的提示
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pendingPasswordPrompts.delete(tabId);
+});
+
+// 为指定标签页显示密码保存提示
+async function showPasswordNotificationForTab(tabId) {
+  const pending = pendingPasswordPrompts.get(tabId);
+  if (!pending) return;
+  
+  // 检查是否已过期（超过30秒）
+  if (Date.now() - pending.timestamp > 30000) {
+    pendingPasswordPrompts.delete(tabId);
+    return;
+  }
+  
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      pendingPasswordPrompts.delete(tabId);
+      return;
+    }
+    
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: showSavePasswordPopup,
+      args: [pending.type, pending.data]
+    });
+    
+    // 显示成功后清除
+    pendingPasswordPrompts.delete(tabId);
+  } catch (e) {
+    // 如果注入失败，保留待显示数据，等下次页面加载完成再试
+  }
+}
 
 function getHostname(url) {
   try {
@@ -175,24 +255,6 @@ function getHostname(url) {
     return url.split('/')[0].split(':')[0];
   } catch {
     return url;
-  }
-}
-
-async function showPasswordNotification(type, data) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  if (tab && tab.id) {
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
-      return;
-    }
-    
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: showSavePasswordPopup,
-        args: [type, data]
-      });
-    } catch (e) {}
   }
 }
 
@@ -301,5 +363,5 @@ function showSavePasswordPopup(type, data) {
     if (document.getElementById('itab-save-password-popup')) {
       popup.remove();
     }
-  }, 10000);
+  }, 30000);
 }
