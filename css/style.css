@@ -84,15 +84,18 @@ body {
   width: 100%;
   max-width: 600px;
   margin-bottom: 50px;
+  position: relative;
+  z-index: 100;
 }
 
 .search-box {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: var(--search-radius);
   padding: 5px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.15);
   position: relative;
 }
 
@@ -101,8 +104,8 @@ body {
   align-items: center;
   padding: 10px 15px;
   cursor: pointer;
-  border-right: 1px solid #e0e0e0;
-  color: #333;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
   user-select: none;
   min-width: 100px;
 }
@@ -125,13 +128,13 @@ body {
 
 .search-engine-dropdown {
   position: absolute;
-  top: 100%;
-  left: 0;
-  background: white;
+  top: calc(100% + 8px);
+  left: 5px;
+  background: rgba(40, 40, 65, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  margin-top: 8px;
-  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
   display: none;
   min-width: 200px;
   overflow: hidden;
@@ -146,16 +149,16 @@ body {
   align-items: center;
   padding: 12px 15px;
   cursor: pointer;
-  color: #333;
+  color: white;
   transition: background 0.2s;
 }
 
 .search-engine-option:hover {
-  background: #f5f5f5;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .search-engine-option.active {
-  background: #e8f0fe;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .search-engine-option img {
@@ -172,11 +175,11 @@ body {
   padding: 15px;
   font-size: 16px;
   background: transparent;
-  color: #333;
+  color: white;
 }
 
 #searchInput::placeholder {
-  color: #999;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .search-btn {
@@ -196,56 +199,122 @@ body {
   background: var(--secondary-color);
 }
 
-/* 书签搜索 */
-.bookmark-search-section {
-  width: 100%;
-  max-width: 1200px;
-  margin-bottom: 20px;
+/* 书签搜索结果下拉列表 */
+.bookmark-search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: rgba(30, 35, 55, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  display: none;
+  max-height: 400px;
+  overflow-y: auto;
+  backdrop-filter: blur(10px);
 }
 
-.bookmark-search-box {
+.bookmark-search-results.show {
+  display: block;
+}
+
+.bookmark-search-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+.bookmark-search-results::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.bookmark-search-header {
+  padding: 10px 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bookmark-search-item {
   display: flex;
   align-items: center;
-  background: var(--card-bg);
-  border-radius: var(--icon-radius);
-  padding: 8px 15px;
-  backdrop-filter: blur(10px);
-  gap: 10px;
-}
-
-.bookmark-search-box svg {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.bookmark-search-box input {
-  flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-color);
-  font-size: 14px;
-}
-
-.bookmark-search-box input::placeholder {
-  color: var(--text-secondary);
-}
-
-.bookmark-search-clear {
-  background: none;
-  border: none;
-  padding: 4px;
+  padding: 12px 16px;
   cursor: pointer;
-  color: var(--text-secondary);
+  transition: background 0.2s;
+  gap: 12px;
+}
+
+.bookmark-search-item:hover,
+.bookmark-search-item.active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.bookmark-search-item .bookmark-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.7;
-  transition: opacity 0.2s;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.bookmark-search-clear:hover {
-  opacity: 1;
+.bookmark-search-item .bookmark-icon img {
+  width: 20px;
+  height: 20px;
+}
+
+.bookmark-search-item .bookmark-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bookmark-search-item .bookmark-name {
+  font-size: 14px;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookmark-search-item .bookmark-url {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.bookmark-search-item .bookmark-folder {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.bookmark-search-tip {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bookmark-search-tip kbd {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+  margin: 0 2px;
 }
 
 /* 快捷方式区域 */
@@ -660,9 +729,12 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 15px 30px;
-  background: rgba(30, 30, 50, 0.95);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: var(--icon-radius) var(--icon-radius) 0 0;
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: none;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
   /* 固定在底部 */
   position: fixed;
@@ -787,12 +859,14 @@ body.multi-select-mode .shortcut-item.selected {
   position: absolute;
   bottom: 56px;
   right: 0;
-  background: rgba(30, 30, 50, 0.95);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: var(--btn-radius);
   padding: 8px 0;
   min-width: 150px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   display: none;
   z-index: 200;
 }
@@ -833,8 +907,10 @@ body.multi-select-mode .shortcut-item.selected {
   right: -450px;
   width: 450px;
   height: 100vh;
-  background: rgba(30, 30, 50, 0.95);
+  background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
   transition: right 0.3s ease;
   z-index: 1000;
   overflow-y: auto;
@@ -1355,19 +1431,21 @@ body.multi-select-mode .shortcut-item.selected {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: 10001;
 }
 
-.modal.show {
+.modal.show,
+.modal.active {
   display: flex;
 }
 
 .modal-content {
-  background: rgba(30, 30, 50, 0.95);
+  background: rgba(45, 45, 70, 0.98);
   border-radius: 16px;
   width: 90%;
   max-width: 400px;
-  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .modal-header {
@@ -1488,6 +1566,16 @@ body.multi-select-mode .shortcut-item.selected {
   margin-top: 5px;
 }
 
+.form-error {
+  font-size: 12px;
+  color: #ff6b6b;
+  margin-top: 5px;
+}
+
+.required {
+  color: #ff6b6b;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -1502,7 +1590,7 @@ body.multi-select-mode .shortcut-item.selected {
   border-radius: var(--icon-radius);
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.3s;
+  transition: background 0.3s, transform 0.2s;
 }
 
 .btn-primary {
@@ -1522,6 +1610,23 @@ body.multi-select-mode .shortcut-item.selected {
 
 .btn-secondary:hover {
   background: var(--card-bg-hover);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-color);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.btn-outline.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
 }
 
 /* 右键菜单 */
@@ -1696,8 +1801,10 @@ body.is-dragging .root-shortcuts .shortcuts-grid:empty::after {
   right: -400px;
   width: 380px;
   height: 100vh;
-  background: rgba(30, 30, 40, 0.95);
+  background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
   z-index: 1000;
   transition: right 0.3s ease;
   box-shadow: -5px 0 20px rgba(0, 0, 0, 0.3);
@@ -2002,4 +2109,1726 @@ body.is-dragging .root-shortcuts .shortcuts-grid:empty::after {
 .page-type-options .radio-label {
   flex-direction: row;
   align-items: center;
+}
+
+/* 密码管理样式 */
+.passwords-search {
+  margin-bottom: 15px;
+}
+
+.passwords-search input {
+  width: 100%;
+  padding: 10px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.passwords-search input::placeholder {
+  color: var(--text-secondary);
+}
+
+.passwords-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+}
+
+.password-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 15px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.password-item:hover {
+  background: var(--card-bg-hover);
+}
+
+.password-item-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 15px;
+  flex-shrink: 0;
+}
+
+.password-item-icon svg {
+  color: white;
+}
+
+.password-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-actions {
+  display: flex;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.password-item:hover .password-item-actions {
+  opacity: 1;
+}
+
+.password-item-actions button {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.password-item-actions button:hover {
+  background: var(--card-bg);
+  color: var(--text-color);
+}
+
+.password-item-actions button.delete-btn:hover {
+  color: #ff6b6b;
+}
+
+/* 密码输入框 */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  flex: 1;
+  padding-right: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px 40px 12px 15px;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.password-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.password-input-wrapper input::placeholder {
+  color: var(--text-secondary);
+}
+
+.toggle-password-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-password-btn:hover {
+  color: var(--text-color);
+}
+
+/* 密码弹窗中的备注框 */
+#passwordEntryNotes {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px 15px;
+  color: var(--text-color);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+}
+
+#passwordEntryNotes:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+#passwordEntryNotes::placeholder {
+  color: var(--text-secondary);
+}
+
+/* 空状态提示 */
+.passwords-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.passwords-empty svg {
+  opacity: 0.5;
+  margin-bottom: 15px;
+}
+
+.passwords-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Toast 提示动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* 密码保存提示 */
+.password-save-prompt {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10002;
+  transform: translateX(120%);
+  transition: transform 0.3s ease;
+}
+
+.password-save-prompt.show {
+  transform: translateX(0);
+}
+
+.password-save-prompt-content {
+  background: rgba(30, 30, 40, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.password-save-prompt-icon {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.password-save-prompt-icon.update {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+}
+
+.password-save-prompt-icon svg {
+  color: white;
+}
+
+.password-save-prompt-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-save-prompt-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 4px;
+}
+
+.password-save-prompt-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.password-save-prompt-site {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.password-save-prompt-user {
+  font-size: 12px;
+  color: var(--primary-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-save-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.password-save-prompt-actions .btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  min-width: 60px;
+}
+
+/* ========== 密码管理弹窗 ========== */
+.password-manager-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(4px);
+}
+
+.password-manager-modal.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.password-manager-content {
+  width: 90%;
+  max-width: 600px;
+  max-height: 85vh;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: scale(0.9) translateY(20px);
+  transition: transform 0.3s ease;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.password-manager-modal.active .password-manager-content {
+  transform: scale(1) translateY(0);
+}
+
+.password-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: rgba(102, 126, 234, 0.3);
+  color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.password-manager-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.password-manager-title h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.password-manager-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-manager-header .lock-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  color: white;
+}
+
+.password-manager-header .lock-btn:hover {
+  background: rgba(255, 193, 7, 0.5);
+}
+
+.password-manager-header .lock-btn svg {
+  fill: white;
+}
+
+.password-manager-header .close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.password-manager-header .close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.password-manager-header .close-btn svg {
+  fill: white;
+}
+
+.password-manager-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 12px;
+}
+
+.pwd-select-all-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.pwd-select-all-wrapper:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pwd-select-all-wrapper input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #4a9eff;
+}
+
+.password-search-box {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 300px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  gap: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.password-search-box:focus-within {
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.password-search-box svg {
+  fill: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.password-search-box input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 14px;
+  background: transparent;
+  color: white;
+}
+
+.password-search-box input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.password-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.password-toolbar-actions .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 多选操作栏 */
+.password-multi-select-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: rgba(102, 126, 234, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.password-multi-select-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 14px;
+}
+
+.password-multi-select-info input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.password-multi-select-info label {
+  cursor: pointer;
+}
+
+.password-multi-select-info strong {
+  font-weight: 600;
+}
+
+.password-multi-select-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 密码列表 */
+.password-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  min-height: 200px;
+  max-height: 400px;
+}
+
+.password-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+}
+
+.password-empty svg {
+  fill: rgba(255, 255, 255, 0.3);
+  margin-bottom: 16px;
+}
+
+.password-empty p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+}
+
+.password-empty span {
+  font-size: 13px;
+}
+
+/* 密码项 */
+.password-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+  gap: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.password-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.password-item.selected {
+  background: rgba(102, 126, 234, 0.25);
+}
+
+/* 选择框区域 */
+.password-item-checkbox-area {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+}
+
+.password-item-checkbox-area input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #4a9eff;
+}
+
+.password-item-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.password-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.password-item-icon img {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.password-item-icon svg {
+  fill: white;
+  width: 20px;
+  height: 20px;
+}
+
+/* 信息区域 */
+.password-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.password-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-url {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-username {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-detail {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.password-item-password {
+  font-family: monospace;
+  letter-spacing: 1px;
+}
+
+/* 操作按钮区域 */
+.password-item-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 1;
+}
+
+.password-item-actions .btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.password-item-actions .btn-icon:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.password-item-actions .btn-icon svg {
+  fill: rgba(255, 255, 255, 0.9);
+  width: 18px;
+  height: 18px;
+}
+
+.password-item-actions .btn-icon:hover svg {
+  fill: white;
+}
+
+.password-item-actions .btn-icon.btn-danger:hover {
+  background: rgba(229, 57, 53, 0.3);
+}
+
+.password-item-actions .btn-icon.btn-danger:hover svg {
+  fill: #ff6b6b;
+}
+
+/* 解密按钮样式 */
+.password-item-actions .btn-icon.btn-decrypt {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.password-item-actions .btn-icon.btn-decrypt:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+.password-item-actions .btn-icon.btn-decrypt svg {
+  fill: #818cf8;
+}
+
+/* 密码详情弹窗 */
+.password-detail-modal {
+  max-width: 450px;
+  width: 90%;
+}
+
+/* 访问密码弹窗 */
+.pwd-access-modal {
+  max-width: 400px;
+  width: 90%;
+}
+
+/* 访问密码弹窗遮罩 */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal-overlay .modal-content {
+  background: linear-gradient(135deg, #1e2a4a 0%, #2d1b4e 100%);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+.modal-overlay .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-overlay .modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.modal-overlay .modal-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-overlay .modal-close:hover {
+  color: white;
+}
+
+.modal-overlay .modal-body {
+  padding: 24px;
+}
+
+.modal-overlay .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pwd-access-tip {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.pwd-access-modal .form-group {
+  margin-bottom: 16px;
+}
+
+.pwd-access-modal .form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.pwd-access-modal .form-group input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 15px;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.pwd-access-modal .form-group input:focus {
+  outline: none;
+  border-color: #4a9eff;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.2);
+}
+
+.pwd-access-modal .form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.pwd-access-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* 加密密钥输入弹窗 */
+#encryptKeyModal {
+  z-index: 10100;
+}
+
+.encrypt-key-modal {
+  max-width: 420px;
+  width: 90%;
+}
+
+.encrypt-key-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(74, 158, 255, 0.1);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.encrypt-key-tip svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  fill: #4a9eff;
+}
+
+.encrypt-key-modal .form-group {
+  margin-bottom: 16px;
+}
+
+.encrypt-key-modal .form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.encrypt-key-modal .password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.encrypt-key-modal .password-input-wrapper input {
+  width: 100%;
+  padding: 14px 48px 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 15px;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.encrypt-key-modal .password-input-wrapper input:focus {
+  outline: none;
+  border-color: #4a9eff;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.2);
+}
+
+.encrypt-key-modal .password-input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.encrypt-key-modal .toggle-password-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.2s;
+}
+
+.encrypt-key-modal .toggle-password-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.encrypt-key-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 107, 107, 0.1);
+  border-radius: 6px;
+}
+
+/* 通用提示弹窗 */
+.alert-modal {
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+}
+
+.alert-modal .modal-body {
+  padding: 30px 20px;
+}
+
+.alert-icon {
+  margin-bottom: 16px;
+}
+
+.alert-icon svg {
+  fill: #f59e0b;
+}
+
+.alert-message {
+  font-size: 16px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.alert-modal .modal-footer {
+  justify-content: center;
+}
+
+.password-detail-item {
+  margin-bottom: 16px;
+}
+
+.password-detail-item label {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 6px;
+}
+
+.password-detail-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+.password-detail-value span {
+  flex: 1;
+  word-break: break-all;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.password-detail-value .btn-copy {
+  flex-shrink: 0;
+  background: rgba(99, 102, 241, 0.2);
+  border: none;
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.password-detail-value .btn-copy:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+.password-detail-value .btn-copy svg {
+  fill: #818cf8;
+}
+
+/* 底部栏 */
+.password-manager-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.password-footer-left {
+  display: flex;
+  gap: 8px;
+}
+
+.password-footer-left .btn-link {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.password-footer-left .btn-link:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.password-footer-left .btn-link svg {
+  fill: currentColor;
+}
+
+.password-footer-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.password-footer-hint svg {
+  fill: rgba(255, 255, 255, 0.6);
+}
+
+/* 密码输入框 */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.password-toggle-btn:hover {
+  opacity: 1;
+}
+
+.password-toggle-btn svg {
+  fill: #666;
+}
+
+/* 按钮样式补充 */
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.btn-danger {
+  background: #e53935;
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #c62828;
+}
+
+/* 密码弹窗中的输入框样式 */
+#passwordModal .modal-body input,
+#passwordModal .modal-body textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #fff;
+  color: #333;
+}
+
+#passwordModal .modal-body input:focus,
+#passwordModal .modal-body textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+#passwordModal .modal-body textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+/* 主密码弹窗样式 */
+.master-password-modal {
+  max-width: 360px;
+  text-align: center;
+}
+
+.master-password-icon {
+  margin-bottom: 16px;
+}
+
+.master-password-icon svg {
+  color: var(--primary-color);
+  opacity: 0.9;
+}
+
+.master-password-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.master-password-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.master-password-modal .form-group {
+  text-align: left;
+}
+
+.master-password-modal .password-input-wrapper {
+  position: relative;
+}
+
+.master-password-modal .password-input-wrapper input {
+  width: 100%;
+  padding: 12px 40px 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.master-password-modal .password-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.master-password-modal .password-input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.master-password-modal .password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.master-password-modal .password-toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.master-password-modal .modal-footer {
+  justify-content: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.master-password-modal .modal-footer .btn {
+  min-width: 100px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 导入加密密钥弹窗样式 */
+.import-encrypt-modal {
+  max-width: 400px;
+  text-align: center;
+}
+
+.import-encrypt-icon {
+  margin-bottom: 16px;
+}
+
+.import-encrypt-icon svg {
+  color: var(--primary-color);
+  opacity: 0.9;
+}
+
+.import-encrypt-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.import-info {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.import-info strong {
+  color: var(--text-color);
+}
+
+.import-encrypt-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.import-encrypt-modal .form-group {
+  text-align: left;
+  margin-bottom: 12px;
+}
+
+.import-encrypt-modal .form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.import-encrypt-modal .password-input-wrapper {
+  position: relative;
+}
+
+.import-encrypt-modal .password-input-wrapper input {
+  width: 100%;
+  padding: 12px 40px 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.import-encrypt-modal .password-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.import-encrypt-modal .password-input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.import-encrypt-modal .password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.import-encrypt-modal .password-toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.import-encrypt-modal .modal-footer {
+  justify-content: center;
+  gap: 12px;
+}
+
+.import-encrypt-modal .modal-footer .btn {
+  min-width: 100px;
+}
+
+/* 导出选项弹窗样式 */
+.export-options-modal {
+  max-width: 420px;
+  text-align: center;
+}
+
+.export-options-icon {
+  margin-bottom: 16px;
+}
+
+.export-options-icon svg {
+  color: var(--primary-color);
+  opacity: 0.9;
+}
+
+.export-options-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.export-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.export-type-option {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.export-type-option:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.export-type-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 12px;
+  accent-color: var(--primary-color);
+}
+
+.export-type-option input[type="radio"]:checked + .export-type-label {
+  color: white;
+}
+
+.export-type-option:has(input:checked) {
+  background: rgba(102, 126, 234, 0.2);
+  border-color: var(--primary-color);
+}
+
+.export-type-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-type-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.export-type-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.export-key-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.export-key-section .form-group {
+  text-align: left;
+  margin-bottom: 12px;
+}
+
+.export-key-section .form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.export-key-section .password-input-wrapper {
+  position: relative;
+}
+
+.export-key-section .password-input-wrapper input {
+  width: 100%;
+  padding: 12px 40px 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.export-key-section .password-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.export-key-section .password-input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.export-key-section .password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.export-key-section .password-toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.export-options-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.export-options-modal .modal-footer {
+  justify-content: center;
+  gap: 12px;
+}
+
+.export-options-modal .modal-footer .btn {
+  min-width: 100px;
+}
+
+/* ========== 自定义 Alert/Confirm 弹窗 ========== */
+.custom-alert-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100000;
+  align-items: center;
+  justify-content: center;
+  animation: alertFadeIn 0.2s ease;
+}
+
+.custom-alert-overlay.active {
+  display: flex;
+}
+
+@keyframes alertFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes alertBoxIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.custom-alert-box {
+  background: linear-gradient(135deg, #1e2a4a 0%, #2d1b4e 100%);
+  border-radius: 20px;
+  padding: 32px 40px;
+  min-width: 320px;
+  max-width: 450px;
+  text-align: center;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+  animation: alertBoxIn 0.3s ease;
+}
+
+.custom-alert-icon {
+  margin-bottom: 20px;
+}
+
+.custom-alert-icon svg {
+  fill: #4ade80;
+}
+
+.custom-alert-icon.confirm-icon svg {
+  fill: #fbbf24;
+}
+
+.custom-alert-icon.error-icon svg {
+  fill: #f87171;
+}
+
+.custom-alert-icon.info-icon svg {
+  fill: #60a5fa;
+}
+
+.custom-alert-message {
+  color: white;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.custom-alert-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 40px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 120px;
+}
+
+.custom-alert-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.custom-alert-btn:active {
+  transform: translateY(0);
+}
+
+.custom-alert-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.custom-alert-btn.btn-cancel {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.custom-alert-btn.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.custom-alert-btn.btn-confirm {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 自定义 Prompt 输入框 */
+.custom-prompt-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 15px;
+  margin-bottom: 24px;
+  outline: none;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.custom-prompt-input:focus {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+}
+
+.custom-prompt-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* 导出选择弹窗 */
+.export-choice-box {
+  max-width: 400px;
+}
+
+.export-choice-tip {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 24px;
+}
+
+.export-choice-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.export-choice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.export-choice-btn svg {
+  flex-shrink: 0;
+}
+
+.export-choice-btn.btn-encrypt {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.export-choice-btn.btn-encrypt:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.export-choice-btn.btn-plain {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.export-choice-btn.btn-plain:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.export-choice-btn.btn-cancel {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.export-choice-btn.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
 }

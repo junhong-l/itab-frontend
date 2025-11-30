@@ -16,10 +16,12 @@
     searchInput: $('#searchInput'),
     searchBtn: $('#searchBtn'),
     searchBox: $('#searchBox'),
+    bookmarkSearchResults: $('#bookmarkSearchResults'),
     engineSelector: $('#engineSelector'),
     engineDropdown: $('#engineDropdown'),
     currentEngineName: $('#currentEngineName'),
     currentEngineIcon: $('#currentEngineIcon'),
+    bookmarkSearchResults: $('#bookmarkSearchResults'),
     shortcutsSection: $('#shortcutsSection'),
     addShortcutBtn: $('#addShortcutBtn'),
     addFolderBtn: $('#addFolderBtn'),
@@ -161,7 +163,66 @@
     syncDownloadBtn: $('#syncDownloadBtn'),
     syncInfo: $('#syncInfo'),
     syncBackupItems: $('#syncBackupItems'),
-    syncRefreshBtn: $('#syncRefreshBtn')
+    syncRefreshBtn: $('#syncRefreshBtn'),
+    // 密码管理
+    passwordManagerBtn: $('#passwordManagerBtn'),
+    passwordManagerModal: $('#passwordManagerModal'),
+    closePasswordManagerBtn: $('#closePasswordManagerBtn'),
+    pwdSearchInput: $('#pwdSearchInput'),
+    pwdDecryptBtn: $('#pwdDecryptBtn'),
+    pwdEncryptBtn: $('#pwdEncryptBtn'),
+    pwdAddBtn: $('#pwdAddBtn'),
+    pwdMultiSelectBar: $('#pwdMultiSelectBar'),
+    pwdSelectAll: $('#pwdSelectAll'),
+    pwdSelectedCount: $('#pwdSelectedCount'),
+    pwdDeleteSelectedBtn: $('#pwdDeleteSelectedBtn'),
+    pwdList: $('#pwdList'),
+    pwdEmpty: $('#pwdEmpty'),
+    pwdImportBtn: $('#pwdImportBtn'),
+    pwdExportBtn: $('#pwdExportBtn'),
+    pwdImportInput: $('#pwdImportInput'),
+    // 访问密码弹窗
+    pwdAccessSetModal: $('#pwdAccessSetModal'),
+    pwdAccessSetClose: $('#pwdAccessSetClose'),
+    pwdAccessNew: $('#pwdAccessNew'),
+    pwdAccessConfirm: $('#pwdAccessConfirm'),
+    pwdAccessSetCancel: $('#pwdAccessSetCancel'),
+    pwdAccessSetSave: $('#pwdAccessSetSave'),
+    pwdAccessVerifyModal: $('#pwdAccessVerifyModal'),
+    pwdAccessVerifyClose: $('#pwdAccessVerifyClose'),
+    pwdAccessInput: $('#pwdAccessInput'),
+    pwdAccessError: $('#pwdAccessError'),
+    pwdAccessVerifyCancel: $('#pwdAccessVerifyCancel'),
+    pwdAccessVerifyConfirm: $('#pwdAccessVerifyConfirm'),
+    // 加密密钥弹窗
+    encryptKeyModal: $('#encryptKeyModal'),
+    encryptKeyTitle: $('#encryptKeyTitle'),
+    encryptKeyTipText: $('#encryptKeyTipText'),
+    closeEncryptKeyBtn: $('#closeEncryptKeyBtn'),
+    encryptKeyInput: $('#encryptKeyInput'),
+    encryptKeyConfirm: $('#encryptKeyConfirm'),
+    toggleEncryptKey: $('#toggleEncryptKey'),
+    toggleEncryptKeyConfirm: $('#toggleEncryptKeyConfirm'),
+    encryptKeyError: $('#encryptKeyError'),
+    cancelEncryptKey: $('#cancelEncryptKey'),
+    confirmEncryptKey: $('#confirmEncryptKey'),
+    // 密码编辑弹窗
+    passwordModal: $('#passwordModal'),
+    passwordModalTitle: $('#passwordModalTitle'),
+    closePasswordModalBtn: $('#closePasswordModalBtn'),
+    passwordSiteName: $('#passwordSiteName'),
+    passwordSiteUrl: $('#passwordSiteUrl'),
+    passwordUsername: $('#passwordUsername'),
+    passwordValue: $('#passwordValue'),
+    togglePasswordVisibility: $('#togglePasswordVisibility'),
+    passwordNotes: $('#passwordNotes'),
+    cancelPasswordBtn: $('#cancelPasswordBtn'),
+    savePasswordBtn: $('#savePasswordBtn'),
+    // 导出选择弹窗
+    exportChoiceOverlay: $('#exportChoiceOverlay'),
+    exportChoiceEncrypt: $('#exportChoiceEncrypt'),
+    exportChoicePlain: $('#exportChoicePlain'),
+    exportChoiceCancel: $('#exportChoiceCancel')
   };
 
   // 应用状态
@@ -189,6 +250,9 @@
     selectedShortcuts: new Set(),
     // 书签搜索
     bookmarkSearchQuery: '',
+    // 搜索框书签搜索
+    searchBookmarkResults: [],
+    searchBookmarkIndex: -1,
     // 隐私模式
     privateMode: false,
     // 文件夹拖拽排序
@@ -200,8 +264,132 @@
     selectedBackupId: null, // 选中的备份ID
     // 是否从右键菜单打开添加书签
     isAddBookmarkFromContextMenu: false,
-    sourceTabId: null  // 来源标签页ID，用于返回
+    sourceTabId: null,  // 来源标签页ID，用于返回
+    // 密码管理状态
+    pwdSearchQuery: '',
+    pwdEditingId: null,
+    pwdSelectedIds: new Set(),
+    pwdMultiSelectMode: false,
+    // 加密密钥相关
+    encryptKeyResolve: null,
+    encryptKeyReject: null
   };
+
+  // AES 加密函数（使用 Web Crypto API）
+  async function deriveKey(password, salt) {
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits', 'deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  // 加密字符串
+  async function encryptString(plaintext, password) {
+    const encoder = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(password, salt);
+    
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      key,
+      encoder.encode(plaintext)
+    );
+    
+    // 将 salt + iv + 密文组合成一个数组，然后 base64 编码
+    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+    combined.set(salt, 0);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+    
+    return btoa(String.fromCharCode(...combined));
+  }
+
+  // 解密字符串
+  async function decryptString(encryptedBase64, password) {
+    try {
+      const combined = new Uint8Array(atob(encryptedBase64).split('').map(c => c.charCodeAt(0)));
+      const salt = combined.slice(0, 16);
+      const iv = combined.slice(16, 28);
+      const encrypted = combined.slice(28);
+      
+      const key = await deriveKey(password, salt);
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv },
+        key,
+        encrypted
+      );
+      
+      return new TextDecoder().decode(decrypted);
+    } catch (e) {
+      console.error('解密失败:', e);
+      return null;
+    }
+  }
+
+  // 加密密码数据中的敏感字段
+  async function encryptPasswords(passwords, encryptKey) {
+    if (!passwords || passwords.length === 0) return [];
+    
+    const encryptedPasswords = [];
+    for (const pwd of passwords) {
+      const encryptedPwd = { ...pwd };
+      if (pwd.username) {
+        encryptedPwd.username = await encryptString(pwd.username, encryptKey);
+      }
+      if (pwd.password) {
+        encryptedPwd.password = await encryptString(pwd.password, encryptKey);
+      }
+      encryptedPwd._encrypted = true; // 标记已加密
+      encryptedPasswords.push(encryptedPwd);
+    }
+    return encryptedPasswords;
+  }
+
+  // 解密密码数据中的敏感字段
+  async function decryptPasswords(passwords, decryptKey) {
+    if (!passwords || passwords.length === 0) return [];
+    
+    const decryptedPasswords = [];
+    for (const pwd of passwords) {
+      if (!pwd._encrypted) {
+        decryptedPasswords.push(pwd);
+        continue;
+      }
+      
+      const decryptedPwd = { ...pwd };
+      if (pwd.username) {
+        const decrypted = await decryptString(pwd.username, decryptKey);
+        if (decrypted === null) return null; // 解密失败
+        decryptedPwd.username = decrypted;
+      }
+      if (pwd.password) {
+        const decrypted = await decryptString(pwd.password, decryptKey);
+        if (decrypted === null) return null; // 解密失败
+        decryptedPwd.password = decrypted;
+      }
+      delete decryptedPwd._encrypted;
+      decryptedPasswords.push(decryptedPwd);
+    }
+    return decryptedPasswords;
+  }
 
   // 初始化应用
   async function init() {
@@ -1436,11 +1624,146 @@
     const query = elements.searchInput.value.trim();
     if (!query) return;
 
+    // 隐藏书签搜索结果
+    hideBookmarkSearchResults();
+
     const engine = state.searchEngines.find(e => e.id === state.currentEngine) || state.searchEngines[0];
     if (engine) {
       const url = engine.url.replace('%s', encodeURIComponent(query));
       openInBackground(url);
       elements.searchInput.value = ''; // 清空搜索框
+    }
+  }
+
+  // 搜索书签
+  function searchBookmarks(query) {
+    if (!query || query.length < 1) {
+      state.searchBookmarkResults = [];
+      return [];
+    }
+    
+    const lowerQuery = query.toLowerCase();
+    const results = state.shortcuts.filter(s => {
+      // 根据当前隐私模式过滤：书签本身有 isPrivate 属性
+      if (!!s.isPrivate !== state.privateMode) {
+        return false;
+      }
+      
+      const nameMatch = s.name && s.name.toLowerCase().includes(lowerQuery);
+      const urlMatch = s.url && s.url.toLowerCase().includes(lowerQuery);
+      return nameMatch || urlMatch;
+    }).slice(0, 8); // 最多显示8个结果
+    
+    state.searchBookmarkResults = results;
+    return results;
+  }
+
+  // 显示书签搜索结果
+  function showBookmarkSearchResults(results) {
+    if (!elements.bookmarkSearchResults) return;
+    
+    if (results.length === 0) {
+      elements.bookmarkSearchResults.classList.remove('show');
+      return;
+    }
+    
+    let html = `<div class="bookmark-search-header">
+      <span>书签匹配</span>
+      <span>${results.length} 个结果</span>
+    </div>`;
+    
+    results.forEach((s, index) => {
+      const folder = s.folderId ? state.folders.find(f => f.id === s.folderId) : null;
+      const folderName = folder ? folder.name : '';
+      html += `
+        <div class="bookmark-search-item ${index === state.searchBookmarkIndex ? 'active' : ''}" 
+             data-index="${index}" data-url="${escapeHtml(s.url)}">
+          <div class="bookmark-icon">
+            <img src="${getFaviconUrl(s.url)}" onerror="this.src='${DEFAULT_ICON_SVG}'">
+          </div>
+          <div class="bookmark-info">
+            <div class="bookmark-name">${escapeHtml(s.name)}</div>
+            <div class="bookmark-url">${escapeHtml(s.url)}</div>
+          </div>
+          ${folderName ? `<span class="bookmark-folder">${escapeHtml(folderName)}</span>` : ''}
+        </div>
+      `;
+    });
+    
+    html += `<div class="bookmark-search-tip">
+      <kbd>↑</kbd><kbd>↓</kbd> 选择 · <kbd>Enter</kbd> 打开 · <kbd>Esc</kbd> 关闭
+    </div>`;
+    
+    elements.bookmarkSearchResults.innerHTML = html;
+    elements.bookmarkSearchResults.classList.add('show');
+    
+    // 绑定点击事件
+    elements.bookmarkSearchResults.querySelectorAll('.bookmark-search-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const url = item.dataset.url;
+        if (url) {
+          openInBackground(url);
+          elements.searchInput.value = '';
+          hideBookmarkSearchResults();
+        }
+      });
+    });
+  }
+
+  // 隐藏书签搜索结果
+  function hideBookmarkSearchResults() {
+    if (!elements.bookmarkSearchResults) return;
+    elements.bookmarkSearchResults.classList.remove('show');
+    state.searchBookmarkResults = [];
+    state.searchBookmarkIndex = -1;
+  }
+
+  // 处理搜索输入
+  function handleSearchInput(e) {
+    const query = e.target.value.trim();
+    state.searchBookmarkIndex = -1;
+    
+    if (query.length >= 1) {
+      const results = searchBookmarks(query);
+      showBookmarkSearchResults(results);
+    } else {
+      hideBookmarkSearchResults();
+    }
+  }
+
+  // 处理搜索键盘事件
+  function handleSearchKeydown(e) {
+    const results = state.searchBookmarkResults;
+    
+    if (!results.length) {
+      if (e.key === 'Enter') {
+        doSearch();
+      }
+      return;
+    }
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      state.searchBookmarkIndex = Math.min(state.searchBookmarkIndex + 1, results.length - 1);
+      showBookmarkSearchResults(results);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      state.searchBookmarkIndex = Math.max(state.searchBookmarkIndex - 1, -1);
+      showBookmarkSearchResults(results);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (state.searchBookmarkIndex >= 0 && results[state.searchBookmarkIndex]) {
+        // 打开选中的书签
+        openInBackground(results[state.searchBookmarkIndex].url);
+        elements.searchInput.value = '';
+        hideBookmarkSearchResults();
+      } else {
+        // 执行搜索引擎搜索
+        doSearch();
+      }
+    } else if (e.key === 'Escape') {
+      hideBookmarkSearchResults();
+      elements.searchInput.blur();
     }
   }
 
@@ -1581,7 +1904,7 @@
     const folderId = elements.shortcutFolder.value ? parseInt(elements.shortcutFolder.value) : null;
 
     if (!name || !url) {
-      alert('请填写名称和网址');
+      showAlert('请填写名称和网址', 'error');
       return;
     }
 
@@ -1620,7 +1943,8 @@
 
   // 删除快捷方式
   async function deleteShortcut(id) {
-    if (!confirm('确定要删除这个快捷方式吗？')) return;
+    const confirmed = await showConfirm('确定要删除这个快捷方式吗？');
+    if (!confirmed) return;
 
     state.shortcuts = state.shortcuts.filter(s => s.id !== id);
     await Storage.set('shortcuts', state.shortcuts);
@@ -1656,7 +1980,7 @@
     const name = elements.folderName.value.trim();
 
     if (!name) {
-      alert('请填写文件夹名称');
+      showAlert('请填写文件夹名称', 'error');
       return;
     }
 
@@ -1672,7 +1996,7 @@
         !!f.isPrivate === state.privateMode
       );
       if (existingFolder) {
-        alert('当前工作区已存在同名文件夹');
+        showAlert('当前工作区已存在同名文件夹', 'error');
         return;
       }
       
@@ -1688,7 +2012,7 @@
         !!f.isPrivate === state.privateMode
       );
       if (existingFolder) {
-        alert('当前工作区已存在同名文件夹');
+        showAlert('当前工作区已存在同名文件夹', 'error');
         return;
       }
       
@@ -1718,7 +2042,8 @@
       confirmMsg += `\n该文件夹中有 ${shortcutsInFolder.length} 个快捷方式，它们将被一并删除。`;
     }
 
-    if (!confirm(confirmMsg)) return;
+    const confirmed = await showConfirm(confirmMsg);
+    if (!confirmed) return;
 
     // 删除文件夹中的所有快捷方式
     state.shortcuts = state.shortcuts.filter(s => s.folderId !== id);
@@ -1765,12 +2090,12 @@
     const icon = elements.engineIcon.value.trim();
 
     if (!name || !url) {
-      alert('请填写名称和搜索URL');
+      showAlert('请填写名称和搜索URL', 'error');
       return;
     }
 
     if (!url.includes('%s')) {
-      alert('搜索URL必须包含 %s 作为搜索关键词占位符');
+      showAlert('搜索URL必须包含 %s 作为搜索关键词占位符', 'error');
       return;
     }
 
@@ -1802,11 +2127,12 @@
   // 删除搜索引擎
   async function deleteEngine(id) {
     if (state.searchEngines.length <= 1) {
-      alert('至少保留一个搜索引擎');
+      showAlert('至少保留一个搜索引擎', 'error');
       return;
     }
 
-    if (!confirm('确定要删除这个搜索引擎吗？')) return;
+    const confirmed = await showConfirm('确定要删除这个搜索引擎吗？');
+    if (!confirmed) return;
 
     state.searchEngines = state.searchEngines.filter(e => e.id !== id);
     
@@ -1858,8 +2184,11 @@
 
   // 显示书签导入预览
   function showImportPreview(bookmarks) {
+    const importActions = $('#importActions');
+    
     if (bookmarks.length === 0) {
       elements.importPreview.innerHTML = '<p>未找到书签</p>';
+      if (importActions) importActions.style.display = 'none';
       return;
     }
 
@@ -1885,29 +2214,15 @@
       });
     }
 
-    html += `
-      <div class="import-actions">
-        <button class="btn btn-secondary" id="selectAllBookmarks">全选</button>
-        <button class="btn btn-secondary" id="deselectAllBookmarks">取消全选</button>
-        <button class="btn btn-primary" id="importSelectedBookmarks">导入选中</button>
-      </div>
-    `;
-
     elements.importPreview.innerHTML = html;
 
     // 存储书签数据
     elements.importPreview.bookmarksData = bookmarks;
 
-    // 绑定按钮事件
-    $('#selectAllBookmarks').addEventListener('click', () => {
-      elements.importPreview.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
-    });
-
-    $('#deselectAllBookmarks').addEventListener('click', () => {
-      elements.importPreview.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-    });
-
-    $('#importSelectedBookmarks').addEventListener('click', importSelectedBookmarks);
+    // 显示按钮区域
+    if (importActions) {
+      importActions.style.display = 'flex';
+    }
   }
 
   // 导入选中的书签
@@ -1965,16 +2280,69 @@
     renderShortcuts();
     elements.importPreview.innerHTML = `<p>成功导入 ${checkboxes.length} 个书签</p>`;
     
+    // 隐藏按钮区域
+    const importActions = $('#importActions');
+    if (importActions) {
+      importActions.style.display = 'none';
+    }
+    
     setTimeout(() => {
       elements.importPreview.innerHTML = '';
     }, 3000);
   }
 
   // 导出所有设置
-  function exportAllData() {
+  async function exportAllData() {
+    // 重新从 Storage 加载最新数据，确保多标签页场景下数据是最新的
+    const latestData = await Storage.getAll();
+    state.partitions = latestData.partitions || state.partitions;
+    state.folders = latestData.folders || state.folders;
+    state.shortcuts = latestData.shortcuts || state.shortcuts;
+    state.searchEngines = latestData.searchEngines || state.searchEngines;
+    state.currentEngine = latestData.currentEngine || state.currentEngine;
+    state.settings = latestData.settings || state.settings;
+    state.currentPartition = latestData.currentPartition || state.currentPartition;
+    state.currentPrivatePartition = latestData.currentPrivatePartition || state.currentPrivatePartition;
+
+    // 获取密码数据
+    const passwords = await PasswordManager.getAll();
+    
+    // 如果有密码数据，询问是否加密
+    let exportPasswords = passwords;
+    let isEncrypted = false;
+    
+    if (passwords && passwords.length > 0) {
+      // 使用三选项：加密导出、不加密导出、取消
+      const choice = await showExportChoice();
+      
+      if (choice === 'cancel') {
+        return; // 用户取消
+      }
+      
+      if (choice === 'encrypt') {
+        try {
+          const encryptKey = await showEncryptKeyModal('export');
+          if (!encryptKey) {
+            return; // 用户取消输入密钥
+          }
+          // 加密密码数据
+          exportPasswords = await encryptPasswords(passwords, encryptKey);
+          isEncrypted = true;
+        } catch (e) {
+          if (e === 'cancelled') {
+            return;
+          }
+          showAlert('加密失败: ' + e.message, 'error');
+          return;
+        }
+      }
+      // choice === 'plain' 时直接使用原始密码数据
+    }
+    
     const data = {
       version: '2.0',
       exportDate: new Date().toISOString(),
+      passwordsEncrypted: isEncrypted,
       data: {
         folders: state.folders,
         shortcuts: state.shortcuts,
@@ -1983,7 +2351,8 @@
         settings: state.settings,
         partitions: state.partitions,
         currentPartition: state.currentPartition,
-        currentPrivatePartition: state.currentPrivatePartition
+        currentPrivatePartition: state.currentPrivatePartition,
+        passwords: exportPasswords
       }
     };
 
@@ -1996,13 +2365,13 @@
     const date = new Date();
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const timeStr = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
-    a.download = `导航页备份-${dateStr}-${timeStr}.json`;
+    a.download = `导航页备份-${dateStr}-${timeStr}${isEncrypted ? '-加密' : ''}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    alert('备份导出成功！');
+    showAlert(isEncrypted ? '备份导出成功！（密码已加密）' : '备份导出成功！', 'success');
   }
 
   // 临时存储待导入的备份数据
@@ -2018,12 +2387,14 @@
       let data;
       let version = '1.0';
       let exportDate = null;
+      let passwordsEncrypted = false;
       
       if (rawData.data) {
         // 新格式 v2.0
         data = rawData.data;
         version = rawData.version || '2.0';
         exportDate = rawData.exportDate;
+        passwordsEncrypted = rawData.passwordsEncrypted || false;
       } else if (rawData.folders && rawData.shortcuts) {
         // 旧格式 v1.0
         data = rawData;
@@ -2039,14 +2410,16 @@
         throw new Error('备份文件中缺少书签数据');
       }
 
-      // 存储待导入数据
+      // 存储待导入数据（包含加密标记）
       pendingBackupData = data;
+      pendingBackupData._passwordsEncrypted = passwordsEncrypted;
 
       // 统计信息
       const partitionCount = data.partitions?.length || 1;
       const folderCount = data.folders.length;
       const shortcutCount = data.shortcuts.length;
       const engineCount = data.searchEngines?.length || 0;
+      const passwordCount = data.passwords?.length || 0;
       const hasSettings = data.settings ? true : false;
 
       // 渲染备份信息
@@ -2074,6 +2447,10 @@
         <div class="backup-info-row">
           <span class="label">搜索引擎</span>
           <span class="value">${engineCount} 个</span>
+        </div>
+        <div class="backup-info-row">
+          <span class="label">密码数量</span>
+          <span class="value highlight">${passwordCount} 个${passwordsEncrypted ? ' <span style="color: #4a9eff; font-size: 12px;">(已加密)</span>' : ''}</span>
         </div>
         <div class="backup-info-row">
           <span class="label">外观设置</span>
@@ -2168,7 +2545,7 @@
 
     } catch (e) {
       console.error('解析备份文件失败:', e);
-      alert('❌ 备份文件解析失败：' + e.message);
+      showAlert('备份文件解析失败：' + e.message, 'error');
     }
   }
 
@@ -2186,6 +2563,29 @@
     const importMode = document.querySelector('input[name="importMode"]:checked').value;
 
     try {
+      // 检查密码是否加密，需要解密
+      if (data._passwordsEncrypted && data.passwords && data.passwords.length > 0) {
+        try {
+          const decryptKey = await showEncryptKeyModal('import');
+          if (!decryptKey) {
+            return; // 用户取消
+          }
+          // 解密密码数据
+          const decryptedPasswords = await decryptPasswords(data.passwords, decryptKey);
+          if (decryptedPasswords === null) {
+            showAlert('解密失败，密钥可能不正确', 'error');
+            return;
+          }
+          data.passwords = decryptedPasswords;
+        } catch (e) {
+          if (e === 'cancelled') {
+            return;
+          }
+          showAlert('解密失败: ' + e.message, 'error');
+          return;
+        }
+      }
+
       if (importMode === 'replace') {
         // 完全替换模式
         await importDataReplace(data);
@@ -2203,10 +2603,10 @@
       renderEngines();
       renderEngineSelector();
 
-      alert('✅ 导入成功！');
+      showAlert('导入成功！', 'success');
     } catch (e) {
       console.error('导入失败:', e);
-      alert('❌ 导入失败：' + e.message);
+      showAlert('导入失败：' + e.message, 'error');
     }
   }
 
@@ -2267,6 +2667,11 @@
         btnRadius: data.settings.btnRadius ?? 12
       };
       await Storage.set('settings', state.settings);
+    }
+
+    // 导入密码（如果有）
+    if (data.passwords && Array.isArray(data.passwords)) {
+      await PasswordManager.saveAll(data.passwords);
     }
   }
 
@@ -2359,6 +2764,23 @@
       await Storage.set('searchEngines', state.searchEngines);
     }
 
+    // 合并密码（按URL+用户名去重）
+    if (data.passwords && Array.isArray(data.passwords)) {
+      const existingPasswords = await PasswordManager.getAll();
+      const existingKeys = new Set(existingPasswords.map(p => `${p.url}_${p.username}`));
+      let maxPwdId = existingPasswords.reduce((max, p) => Math.max(max, p.id || 0), 0);
+
+      for (const pwd of data.passwords) {
+        const key = `${pwd.url}_${pwd.username}`;
+        if (!existingKeys.has(key)) {
+          maxPwdId++;
+          existingPasswords.push({ ...pwd, id: maxPwdId });
+          existingKeys.add(key);
+        }
+      }
+      await PasswordManager.saveAll(existingPasswords);
+    }
+
     // 设置不合并，保留当前设置
   }
 
@@ -2423,11 +2845,12 @@
   async function deleteSelectedShortcuts() {
     const count = state.selectedShortcuts.size;
     if (count === 0) {
-      alert('请先选择要删除的书签');
+      showAlert('请先选择要删除的书签', 'error');
       return;
     }
 
-    if (!confirm(`确定要删除选中的 ${count} 个书签吗？`)) return;
+    const confirmed = await showConfirm(`确定要删除选中的 ${count} 个书签吗？`);
+    if (!confirmed) return;
 
     // 删除选中的书签
     state.shortcuts = state.shortcuts.filter(s => !state.selectedShortcuts.has(s.id));
@@ -2459,26 +2882,41 @@
     });
 
     elements.searchInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        doSearch();
-      }
+      // keypress 不再处理 Enter，由 keydown 统一处理
+    });
+
+    // 搜索输入框实时书签搜索
+    elements.searchInput.addEventListener('input', handleSearchInput);
+
+    // 搜索输入框键盘导航
+    elements.searchInput.addEventListener('keydown', handleSearchKeydown);
+
+    // 搜索输入框失焦时隐藏下拉菜单（延迟以允许点击）
+    elements.searchInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        hideBookmarkSearchResults();
+      }, 200);
     });
 
     elements.searchBtn.addEventListener('click', doSearch);
 
-    // 书签搜索
-    elements.bookmarkSearchInput.addEventListener('input', (e) => {
-      state.bookmarkSearchQuery = e.target.value.trim();
-      elements.bookmarkSearchClear.style.display = state.bookmarkSearchQuery ? 'flex' : 'none';
-      renderShortcuts();
-    });
+    // 书签搜索（如果元素存在）
+    if (elements.bookmarkSearchInput) {
+      elements.bookmarkSearchInput.addEventListener('input', (e) => {
+        state.bookmarkSearchQuery = e.target.value.trim();
+        elements.bookmarkSearchClear.style.display = state.bookmarkSearchQuery ? 'flex' : 'none';
+        renderShortcuts();
+      });
+    }
 
-    elements.bookmarkSearchClear.addEventListener('click', () => {
-      state.bookmarkSearchQuery = '';
-      elements.bookmarkSearchInput.value = '';
-      elements.bookmarkSearchClear.style.display = 'none';
-      renderShortcuts();
-    });
+    if (elements.bookmarkSearchClear) {
+      elements.bookmarkSearchClear.addEventListener('click', () => {
+        state.bookmarkSearchQuery = '';
+        elements.bookmarkSearchInput.value = '';
+        elements.bookmarkSearchClear.style.display = 'none';
+        renderShortcuts();
+      });
+    }
 
     // 点击其他地方关闭下拉菜单和右键菜单
     document.addEventListener('click', (e) => {
@@ -2491,6 +2929,12 @@
       // 关闭添加菜单
       if (!elements.addMenuDropdown.contains(e.target) && !elements.addMenuBtn.contains(e.target)) {
         elements.addMenuDropdown.classList.remove('show');
+      }
+      // 关闭书签搜索下拉菜单
+      if (elements.bookmarkSearchResults && 
+          !elements.bookmarkSearchResults.contains(e.target) && 
+          !elements.searchInput.contains(e.target)) {
+        hideBookmarkSearchResults();
       }
     });
 
@@ -2744,6 +3188,17 @@
       }
     });
 
+    // 书签导入按钮事件
+    $('#selectAllBookmarks').addEventListener('click', () => {
+      elements.importPreview.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+    });
+
+    $('#deselectAllBookmarks').addEventListener('click', () => {
+      elements.importPreview.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    });
+
+    $('#importSelectedBookmarks').addEventListener('click', importSelectedBookmarks);
+
     // 备份导出
     elements.exportDataBtn.addEventListener('click', exportAllData);
 
@@ -2780,34 +3235,82 @@
     elements.syncDownloadBtn.addEventListener('click', downloadData);
     elements.syncRefreshBtn.addEventListener('click', loadBackupList);
 
-    // 页面右键菜单 - 空白处右键添加书签
-    document.addEventListener('contextmenu', (e) => {
-      // 检查是否点击在空白区域（不是书签、文件夹、按钮等元素上）
-      const target = e.target;
-      const isOnInteractiveElement = target.closest('.shortcut-item') ||
-                                      target.closest('.folder-item') ||
-                                      target.closest('.partition-tab') ||
-                                      target.closest('.action-btn') ||
-                                      target.closest('.modal') ||
-                                      target.closest('.settings-panel') ||
-                                      target.closest('.sync-panel') ||
-                                      target.closest('.search-box') ||
-                                      target.closest('.context-menu') ||
-                                      target.closest('button') ||
-                                      target.closest('input') ||
-                                      target.closest('select');
+    // 加密密钥弹窗事件
+    elements.closeEncryptKeyBtn.addEventListener('click', () => {
+      const rejectFunc = state.encryptKeyReject;
+      hideEncryptKeyModal();
+      if (rejectFunc) rejectFunc('cancelled');
+    });
+    
+    elements.cancelEncryptKey.addEventListener('click', () => {
+      const rejectFunc = state.encryptKeyReject;
+      hideEncryptKeyModal();
+      if (rejectFunc) rejectFunc('cancelled');
+    });
+    
+    elements.confirmEncryptKey.addEventListener('click', () => {
+      const key = elements.encryptKeyInput.value;
+      const confirmKey = elements.encryptKeyConfirm.value;
+      const confirmFormGroup = elements.encryptKeyConfirm.closest('.form-group');
+      const isDecryptMode = confirmFormGroup && confirmFormGroup.style.display === 'none';
       
-      if (!isOnInteractiveElement) {
-        e.preventDefault();
-        showPageContextMenu(e.clientX, e.clientY);
+      if (!key) {
+        elements.encryptKeyError.textContent = '请输入密钥';
+        elements.encryptKeyError.style.display = 'block';
+        return;
+      }
+      
+      if (key.length < 6) {
+        elements.encryptKeyError.textContent = '密钥长度至少6位';
+        elements.encryptKeyError.style.display = 'block';
+        return;
+      }
+      
+      // 加密模式需要验证两次输入一致
+      if (!isDecryptMode && key !== confirmKey) {
+        elements.encryptKeyError.textContent = '两次输入的密钥不一致';
+        elements.encryptKeyError.style.display = 'block';
+        return;
+      }
+      
+      // 先保存 resolve 函数，再隐藏弹窗（隐藏会清空 resolve）
+      const resolveFunc = state.encryptKeyResolve;
+      hideEncryptKeyModal();
+      if (resolveFunc) {
+        resolveFunc(key);
+      }
+    });
+    
+    // 切换密钥可见性
+    elements.toggleEncryptKey.addEventListener('click', () => {
+      const input = elements.encryptKeyInput;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+    
+    elements.toggleEncryptKeyConfirm.addEventListener('click', () => {
+      const input = elements.encryptKeyConfirm;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+    
+    // Enter 键确认
+    elements.encryptKeyInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const isDecryptMode = elements.encryptKeyConfirm.parentElement.parentElement.style.display === 'none';
+        if (isDecryptMode) {
+          elements.confirmEncryptKey.click();
+        } else {
+          elements.encryptKeyConfirm.focus();
+        }
+      }
+    });
+    
+    elements.encryptKeyConfirm.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        elements.confirmEncryptKey.click();
       }
     });
 
-    // 页面右键菜单 - 添加当前页到书签
-    elements.addPageToBookmark.addEventListener('click', () => {
-      hideAllContextMenus();
-      openAddPageBookmarkModal();
-    });
+    // 页面右键菜单功能已禁用（新标签页场景下"添加当前页面到书签"没有意义）
 
     // 添加页面到书签弹窗事件
     elements.closeAddPageBookmarkBtn.addEventListener('click', closeAddPageBookmarkModal);
@@ -2835,11 +3338,135 @@
         closePartitionModal();
         closeBackupPreviewModal();
         closeAddPageBookmarkModal();
+        closePasswordManager();
+        closePasswordModal();
+        closeAccessSetModal();
+        closeAccessVerifyModal();
+        exitMultiSelectMode();
         elements.settingsPanel.classList.remove('show');
         elements.syncPanel.classList.remove('active');
         hideAllContextMenus();
       }
     });
+
+    // ========== 密码管理事件 ==========
+    // 打开密码管理
+    if (elements.passwordManagerBtn) {
+      elements.passwordManagerBtn.addEventListener('click', openPasswordManager);
+    }
+    if (elements.closePasswordManagerBtn) {
+      elements.closePasswordManagerBtn.addEventListener('click', closePasswordManager);
+    }
+    
+    // 访问密码设置弹窗事件
+    if (elements.pwdAccessSetClose) {
+      elements.pwdAccessSetClose.addEventListener('click', closeAccessSetModal);
+    }
+    if (elements.pwdAccessSetCancel) {
+      elements.pwdAccessSetCancel.addEventListener('click', closeAccessSetModal);
+    }
+    if (elements.pwdAccessSetSave) {
+      elements.pwdAccessSetSave.addEventListener('click', saveAccessPassword);
+    }
+    if (elements.pwdAccessNew) {
+      elements.pwdAccessNew.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') elements.pwdAccessConfirm?.focus();
+      });
+    }
+    if (elements.pwdAccessConfirm) {
+      elements.pwdAccessConfirm.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') saveAccessPassword();
+      });
+    }
+    
+    // 访问密码验证弹窗事件
+    if (elements.pwdAccessVerifyClose) {
+      elements.pwdAccessVerifyClose.addEventListener('click', closeAccessVerifyModal);
+    }
+    if (elements.pwdAccessVerifyCancel) {
+      elements.pwdAccessVerifyCancel.addEventListener('click', closeAccessVerifyModal);
+    }
+    if (elements.pwdAccessVerifyConfirm) {
+      elements.pwdAccessVerifyConfirm.addEventListener('click', verifyAccessPassword);
+    }
+    if (elements.pwdAccessInput) {
+      elements.pwdAccessInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') verifyAccessPassword();
+      });
+    }
+    
+    // 密码搜索
+    if (elements.pwdSearchInput) {
+      elements.pwdSearchInput.addEventListener('input', (e) => {
+        state.pwdSearchQuery = e.target.value.trim();
+        renderPasswordList();
+      });
+    }
+    
+    // 添加密码
+    if (elements.pwdAddBtn) {
+      elements.pwdAddBtn.addEventListener('click', () => openPasswordModal());
+    }
+    if (elements.closePasswordModalBtn) {
+      elements.closePasswordModalBtn.addEventListener('click', closePasswordModal);
+    }
+    if (elements.cancelPasswordBtn) {
+      elements.cancelPasswordBtn.addEventListener('click', closePasswordModal);
+    }
+    if (elements.savePasswordBtn) {
+      elements.savePasswordBtn.addEventListener('click', savePassword);
+    }
+    
+    // 密码可见性切换
+    if (elements.togglePasswordVisibility) {
+      elements.togglePasswordVisibility.addEventListener('click', () => {
+        const input = elements.passwordValue;
+        const eyeOpen = elements.togglePasswordVisibility.querySelector('.eye-open');
+        const eyeClosed = elements.togglePasswordVisibility.querySelector('.eye-closed');
+        if (input.type === 'password') {
+          input.type = 'text';
+          eyeOpen.style.display = 'none';
+          eyeClosed.style.display = 'block';
+        } else {
+          input.type = 'password';
+          eyeOpen.style.display = 'block';
+          eyeClosed.style.display = 'none';
+        }
+      });
+    }
+    
+    // 导入导出
+    if (elements.pwdImportBtn && elements.pwdImportInput) {
+      elements.pwdImportBtn.addEventListener('click', () => elements.pwdImportInput.click());
+      elements.pwdImportInput.addEventListener('change', handlePasswordImport);
+    }
+    if (elements.pwdExportBtn) {
+      elements.pwdExportBtn.addEventListener('click', exportPasswords);
+    }
+    
+    // 多选删除
+    if (elements.pwdSelectAll) {
+      elements.pwdSelectAll.addEventListener('change', (e) => {
+        const checkboxes = elements.pwdList.querySelectorAll('.pwd-item-checkbox');
+        checkboxes.forEach(cb => {
+          cb.checked = e.target.checked;
+          const id = parseInt(cb.dataset.id);
+          if (e.target.checked) {
+            state.pwdSelectedIds.add(id);
+          } else {
+            state.pwdSelectedIds.delete(id);
+          }
+        });
+        updatePwdDeleteBtn();
+      });
+    }
+    if (elements.pwdDeleteSelectedBtn) {
+      elements.pwdDeleteSelectedBtn.addEventListener('click', deleteSelectedPasswords);
+    }
+    
+    // 隐藏加密/解密按钮（明文存储无需此功能）
+    if (elements.pwdDecryptBtn) elements.pwdDecryptBtn.style.display = 'none';
+    if (elements.pwdEncryptBtn) elements.pwdEncryptBtn.style.display = 'none';
   }
 
   // ========== 分区管理功能 ==========
@@ -2925,7 +3552,7 @@
     const name = elements.partitionName.value.trim();
     
     if (!name) {
-      alert('请填写分区名称');
+      showAlert('请填写分区名称', 'error');
       return;
     }
 
@@ -2939,7 +3566,7 @@
         !!p.isPrivate === state.privateMode
       );
       if (existingPartition) {
-        alert('当前区域已存在同名工作区');
+        showAlert('当前区域已存在同名工作区', 'error');
         return;
       }
       
@@ -2954,7 +3581,7 @@
         !!p.isPrivate === state.privateMode
       );
       if (existingPartition) {
-        alert('当前区域已存在同名工作区');
+        showAlert('当前区域已存在同名工作区', 'error');
         return;
       }
       
@@ -2981,7 +3608,7 @@
     // 只检查当前模式下的分区数量
     const currentModePartitions = state.partitions.filter(p => !!p.isPrivate === state.privateMode);
     if (currentModePartitions.length <= 1) {
-      alert('至少需要保留一个分区');
+      showAlert('至少需要保留一个分区', 'error');
       return;
     }
     
@@ -2992,7 +3619,8 @@
       confirmMsg += `\n该分区中有 ${foldersInPartition.length} 个文件夹，它们将被移动到默认分区。`;
     }
     
-    if (!confirm(confirmMsg)) return;
+    const confirmed = await showConfirm(confirmMsg);
+    if (!confirmed) return;
     
     // 将该分区的文件夹移动到当前模式的第一个分区
     const defaultPartition = currentModePartitions.find(p => p.id !== id);
@@ -3191,12 +3819,12 @@
     const folderId = elements.pageBookmarkFolder.value ? parseInt(elements.pageBookmarkFolder.value) : null;
 
     if (!name) {
-      alert('请填写书签名称');
+      showAlert('请填写书签名称', 'error');
       return;
     }
 
     if (!url) {
-      alert('请填写网址');
+      showAlert('请填写网址', 'error');
       return;
     }
 
@@ -3465,34 +4093,129 @@
     elements.syncInfo.className = 'sync-info show';
   }
 
+  // 显示加密密钥输入弹窗
+  // mode: 'upload' | 'export' | 'download' | 'import'
+  function showEncryptKeyModal(mode = 'upload') {
+    return new Promise((resolve, reject) => {
+      state.encryptKeyResolve = resolve;
+      state.encryptKeyReject = reject;
+      elements.encryptKeyInput.value = '';
+      elements.encryptKeyConfirm.value = '';
+      elements.encryptKeyError.style.display = 'none';
+      
+      // 根据模式设置标题和提示文字
+      const configs = {
+        upload: {
+          title: '输入加密密钥',
+          tip: '密码数据将使用此密钥进行 AES 加密后上传，下载时需要使用相同密钥解密。',
+          btn: '确认上传'
+        },
+        export: {
+          title: '输入加密密钥',
+          tip: '密码数据将使用此密钥进行 AES 加密后导出，导入时需要使用相同密钥解密。',
+          btn: '确认导出'
+        },
+        download: {
+          title: '输入解密密钥',
+          tip: '请输入上传时使用的加密密钥，用于解密密码数据。',
+          btn: '确认下载'
+        },
+        import: {
+          title: '输入解密密钥',
+          tip: '检测到备份文件中的密码已加密，请输入导出时使用的密钥进行解密。',
+          btn: '确认导入'
+        }
+      };
+      
+      const config = configs[mode] || configs.upload;
+      elements.encryptKeyTitle.textContent = config.title;
+      elements.encryptKeyTipText.textContent = config.tip;
+      elements.confirmEncryptKey.textContent = config.btn;
+      
+      // 解密模式不需要确认密钥
+      const isDecrypt = mode === 'download' || mode === 'import';
+      const confirmFormGroup = elements.encryptKeyConfirm.closest('.form-group');
+      if (confirmFormGroup) {
+        confirmFormGroup.style.display = isDecrypt ? 'none' : 'block';
+      }
+      
+      elements.encryptKeyModal.classList.add('active');
+      elements.encryptKeyInput.focus();
+    });
+  }
+
+  // 隐藏加密密钥输入弹窗
+  function hideEncryptKeyModal() {
+    elements.encryptKeyModal.classList.remove('active');
+    state.encryptKeyResolve = null;
+    state.encryptKeyReject = null;
+  }
+
   // 上传数据到服务器
   async function uploadData() {
     if (!state.syncConnected || !state.syncConfig) {
-      alert('请先连接同步服务');
+      showAlert('请先连接同步服务', 'error');
       return;
     }
 
     // 弹出输入框让用户输入备份名称
-    const backupName = prompt('请输入备份名称：', '我的导航备份');
+    const backupName = await showPrompt('请输入备份名称：', '我的导航备份');
     if (!backupName) return;
+
+    // 重新从 Storage 加载最新数据，确保多标签页场景下数据是最新的
+    const latestData = await Storage.getAll();
+    state.partitions = latestData.partitions || state.partitions;
+    state.folders = latestData.folders || state.folders;
+    state.shortcuts = latestData.shortcuts || state.shortcuts;
+    state.searchEngines = latestData.searchEngines || state.searchEngines;
+    state.currentEngine = latestData.currentEngine || state.currentEngine;
+    state.settings = latestData.settings || state.settings;
+    state.currentPartition = latestData.currentPartition || state.currentPartition;
+    state.currentPrivatePartition = latestData.currentPrivatePartition || state.currentPrivatePartition;
+
+    // 获取密码数据
+    const passwords = await PasswordManager.getAll();
+    
+    // 如果有密码数据，需要输入加密密钥
+    let encryptedPasswords = [];
+    if (passwords && passwords.length > 0) {
+      try {
+        const encryptKey = await showEncryptKeyModal('upload');
+        if (!encryptKey) {
+          showAlert('已取消上传', 'info');
+          return;
+        }
+        // 加密密码数据
+        encryptedPasswords = await encryptPasswords(passwords, encryptKey);
+      } catch (e) {
+        if (e === 'cancelled') {
+          return;
+        }
+        showAlert('加密失败: ' + e.message, 'error');
+        return;
+      }
+    }
 
     elements.syncUploadBtn.disabled = true;
     showSyncInfo('正在上传...');
 
     try {
-      const data = {
-        name: backupName.trim(),
-        data: {
-          partitions: state.partitions,
-          folders: state.folders,
-          shortcuts: state.shortcuts,
-          searchEngines: state.searchEngines,
-          currentEngine: state.currentEngine,
-          settings: state.settings,
-          currentPartition: state.currentPartition,
-          currentPrivatePartition: state.currentPrivatePartition
-        }
+      const uploadData = {
+        partitions: state.partitions,
+        folders: state.folders,
+        shortcuts: state.shortcuts,
+        searchEngines: state.searchEngines,
+        currentEngine: state.currentEngine,
+        settings: state.settings,
+        currentPartition: state.currentPartition,
+        currentPrivatePartition: state.currentPrivatePartition
       };
+      
+      // 只有当有密码数据时才添加 passwords 字段
+      const hasEncryptedPasswords = encryptedPasswords.length > 0;
+      if (hasEncryptedPasswords) {
+        uploadData.passwords = encryptedPasswords;
+      }
 
       const response = await fetch(state.syncConfig.apiUpload, {
         method: 'POST',
@@ -3501,7 +4224,11 @@
           'x-access-key': state.syncConfig.accessKey,
           'x-secret-key': state.syncConfig.secretKey
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          name: backupName.trim(),
+          passwordsEncrypted: hasEncryptedPasswords,
+          data: uploadData
+        })
       });
 
       if (!response.ok) {
@@ -3510,7 +4237,8 @@
       }
 
       const result = await response.json();
-      showSyncInfo(`✅ ${result.message}\n时间: ${new Date().toLocaleString()}\n书签: ${state.shortcuts.length} 个\n文件夹: ${state.folders.length} 个`);
+      const passwordInfo = encryptedPasswords.length > 0 ? `\n密码: ${encryptedPasswords.length} 个（已加密）` : '';
+      showSyncInfo(`✅ ${result.message}\n时间: ${new Date().toLocaleString()}\n书签: ${state.shortcuts.length} 个\n文件夹: ${state.folders.length} 个${passwordInfo}`);
       
       // 刷新备份列表
       await loadBackupList();
@@ -3525,17 +4253,18 @@
   // 从服务器下载数据
   async function downloadData() {
     if (!state.syncConnected || !state.syncConfig) {
-      alert('请先连接同步服务');
+      showAlert('请先连接同步服务', 'error');
       return;
     }
 
     if (!state.selectedBackupId) {
-      alert('请先选择要下载的备份');
+      showAlert('请先选择要下载的备份', 'error');
       return;
     }
 
     const selectedBackup = state.syncBackups.find(b => b.id === state.selectedBackupId);
-    if (!confirm(`确定要下载备份"${selectedBackup?.name}"吗？\n这将覆盖本地数据。`)) {
+    const confirmed = await showConfirm(`确定要下载备份"${selectedBackup?.name}"吗？\n这将覆盖本地数据。`);
+    if (!confirmed) {
       return;
     }
 
@@ -3558,7 +4287,11 @@
         throw new Error(result.error || `下载失败: ${response.status}`);
       }
 
-      const data = await response.json();
+      const responseData = await response.json();
+      
+      // 新接口格式：{ version, exportDate, passwordsEncrypted, data: {...} }
+      const data = responseData.data || responseData;
+      const passwordsEncrypted = responseData.passwordsEncrypted || false;
 
       // 导入分区
       if (data.partitions && Array.isArray(data.partitions) && data.partitions.length > 0) {
@@ -3620,6 +4353,39 @@
         await Storage.set('currentPrivatePartition', state.currentPrivatePartition);
       }
       
+      // 导入密码
+      let importedPasswordCount = 0;
+      if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
+        let passwordsToSave = data.passwords;
+        
+        // 如果密码已加密，需要用户输入解密密钥
+        if (passwordsEncrypted) {
+          try {
+            const decryptKey = await showEncryptKeyModal('download');
+            if (!decryptKey) {
+              showAlert('已跳过密码导入', 'info');
+            } else {
+              const decryptedPasswords = await decryptPasswords(data.passwords, decryptKey);
+              if (decryptedPasswords === null) {
+                showAlert('解密失败，密钥可能不正确，已跳过密码导入', 'error');
+              } else {
+                passwordsToSave = decryptedPasswords;
+                await PasswordManager.saveAll(passwordsToSave);
+                importedPasswordCount = passwordsToSave.length;
+              }
+            }
+          } catch (e) {
+            if (e !== 'cancelled') {
+              showAlert('解密失败: ' + e.message, 'error');
+            }
+          }
+        } else {
+          // 密码未加密，直接保存
+          await PasswordManager.saveAll(passwordsToSave);
+          importedPasswordCount = passwordsToSave.length;
+        }
+      }
+      
       // 确保两个区域都有默认工作区
       ensureDefaultPartitions();
 
@@ -3630,13 +4396,659 @@
       renderEngines();
       renderEngineSelector();
 
-      showSyncInfo(`✅ 下载成功！\n时间: ${new Date().toLocaleString()}\n分区: ${state.partitions.length} 个\n书签: ${state.shortcuts.length} 个\n文件夹: ${state.folders.length} 个`);
+      const passwordInfo = importedPasswordCount > 0 ? `\n密码: ${importedPasswordCount} 个` : '';
+      showSyncInfo(`✅ 下载成功！\n时间: ${new Date().toLocaleString()}\n分区: ${state.partitions.length} 个\n书签: ${state.shortcuts.length} 个\n文件夹: ${state.folders.length} 个${passwordInfo}`);
     } catch (e) {
       console.error('下载失败:', e);
       showSyncInfo(`❌ 下载失败: ${e.message}`);
     } finally {
       elements.syncDownloadBtn.disabled = !state.selectedBackupId;
     }
+  }
+
+  // ========== 密码管理功能 ==========
+
+  // 打开密码管理弹窗（带访问密码验证）
+  async function openPasswordManager() {
+    if (!elements.passwordManagerModal) return;
+    
+    // 检查是否已设置访问密码
+    const hasPassword = await PasswordManager.hasAccessPassword();
+    
+    if (!hasPassword) {
+      // 未设置访问密码，显示设置弹窗
+      showAccessSetModal();
+    } else {
+      // 已设置访问密码，显示验证弹窗
+      showAccessVerifyModal();
+    }
+  }
+
+  // 实际打开密码管理器（验证通过后调用）
+  async function doOpenPasswordManager() {
+    if (!elements.passwordManagerModal) return;
+    elements.passwordManagerModal.classList.add('active');
+    state.pwdSearchQuery = '';
+    if (elements.pwdSearchInput) elements.pwdSearchInput.value = '';
+    state.pwdSelectedIds.clear();
+    state.pwdMultiSelectMode = false;
+    await renderPasswordList();
+  }
+
+  // 显示设置访问密码弹窗
+  function showAccessSetModal() {
+    if (!elements.pwdAccessSetModal) return;
+    elements.pwdAccessSetModal.classList.add('active');
+    if (elements.pwdAccessNew) elements.pwdAccessNew.value = '';
+    if (elements.pwdAccessConfirm) elements.pwdAccessConfirm.value = '';
+    if (elements.pwdAccessNew) elements.pwdAccessNew.focus();
+  }
+
+  // 关闭设置访问密码弹窗
+  function closeAccessSetModal() {
+    if (!elements.pwdAccessSetModal) return;
+    elements.pwdAccessSetModal.classList.remove('active');
+  }
+
+  // 保存访问密码
+  async function saveAccessPassword() {
+    const pwd = elements.pwdAccessNew?.value || '';
+    const confirmPwd = elements.pwdAccessConfirm?.value || '';
+    
+    if (!pwd) {
+      showAlert('请输入访问密码', 'error');
+      return;
+    }
+    if (pwd.length < 4) {
+      showAlert('访问密码至少需要4个字符', 'error');
+      return;
+    }
+    if (pwd !== confirmPwd) {
+      showAlert('两次输入的密码不一致', 'error');
+      return;
+    }
+    
+    await PasswordManager.setAccessPassword(pwd);
+    closeAccessSetModal();
+    showToast('访问密码设置成功');
+    await doOpenPasswordManager();
+  }
+  // 显示验证访问密码弹窗
+  function showAccessVerifyModal() {
+    if (!elements.pwdAccessVerifyModal) return;
+    elements.pwdAccessVerifyModal.classList.add('active');
+    if (elements.pwdAccessInput) elements.pwdAccessInput.value = '';
+    if (elements.pwdAccessError) elements.pwdAccessError.style.display = 'none';
+    if (elements.pwdAccessInput) elements.pwdAccessInput.focus();
+  }
+
+  // 关闭验证访问密码弹窗
+  function closeAccessVerifyModal() {
+    if (!elements.pwdAccessVerifyModal) return;
+    elements.pwdAccessVerifyModal.classList.remove('active');
+  }
+
+  // 验证访问密码
+  async function verifyAccessPassword() {
+    const pwd = elements.pwdAccessInput?.value || '';
+    
+    if (!pwd) {
+      if (elements.pwdAccessError) {
+        elements.pwdAccessError.textContent = '请输入访问密码';
+        elements.pwdAccessError.style.display = 'block';
+      }
+      return;
+    }
+    
+    const isValid = await PasswordManager.verifyAccessPassword(pwd);
+    
+    if (isValid) {
+      closeAccessVerifyModal();
+      await doOpenPasswordManager();
+    } else {
+      if (elements.pwdAccessError) {
+        elements.pwdAccessError.textContent = '密码错误，请重试';
+        elements.pwdAccessError.style.display = 'block';
+      }
+      if (elements.pwdAccessInput) elements.pwdAccessInput.select();
+    }
+  }
+
+  // 关闭密码管理弹窗
+  function closePasswordManager() {
+    if (!elements.passwordManagerModal) return;
+    elements.passwordManagerModal.classList.remove('active');
+    state.pwdSearchQuery = '';
+    state.pwdSelectedIds.clear();
+    state.pwdMultiSelectMode = false;
+  }
+
+  // 渲染密码列表
+  async function renderPasswordList() {
+    if (!elements.pwdList) return;
+    
+    const passwords = await PasswordManager.getAll();
+    const query = state.pwdSearchQuery.toLowerCase();
+    
+    // 过滤密码
+    const filtered = passwords.filter(p => {
+      if (!query) return true;
+      return (p.name && p.name.toLowerCase().includes(query)) ||
+             (p.url && p.url.toLowerCase().includes(query)) ||
+             (p.username && p.username.toLowerCase().includes(query));
+    });
+    
+    // 显示/隐藏空状态
+    if (filtered.length === 0) {
+      if (elements.pwdEmpty) {
+        elements.pwdEmpty.style.display = 'flex';
+        elements.pwdList.innerHTML = '';
+        elements.pwdList.appendChild(elements.pwdEmpty);
+      }
+      return;
+    }
+    
+    if (elements.pwdEmpty) elements.pwdEmpty.style.display = 'none';
+    
+    // 渲染列表
+    elements.pwdList.innerHTML = filtered.map(p => {
+      const hostname = PasswordManager.getHostname(p.url);
+      
+      return `
+        <div class="password-item" data-id="${p.id}">
+          <div class="password-item-checkbox-area">
+            <input type="checkbox" class="pwd-item-checkbox" data-id="${p.id}" 
+                   ${state.pwdSelectedIds.has(p.id) ? 'checked' : ''}>
+          </div>
+          <div class="password-item-info">
+            <div class="password-item-name">${escapeHtml(p.name || hostname || '未命名')}</div>
+            <div class="password-item-url">${escapeHtml(p.url || '')}</div>
+            <div class="password-item-username">${escapeHtml(p.username || '')}</div>
+          </div>
+          <div class="password-item-actions">
+            <button class="pwd-action-btn pwd-copy-user" title="复制用户名" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </button>
+            <button class="pwd-action-btn pwd-copy-pwd" title="复制密码" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+              </svg>
+            </button>
+            <button class="pwd-action-btn pwd-edit" title="编辑" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+              </svg>
+            </button>
+            <button class="pwd-action-btn pwd-delete" title="删除" data-id="${p.id}">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // 绑定列表项事件
+    bindPasswordItemEvents();
+    updatePwdDeleteBtn();
+  }
+
+  // 绑定密码列表项事件
+  function bindPasswordItemEvents() {
+    // 复制用户名
+    elements.pwdList.querySelectorAll('.pwd-copy-user').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        const passwords = await PasswordManager.getAll();
+        const p = passwords.find(pwd => pwd.id === id);
+        if (p && p.username) {
+          await navigator.clipboard.writeText(p.username);
+          showToast('用户名已复制');
+        }
+      });
+    });
+    
+    // 复制密码
+    elements.pwdList.querySelectorAll('.pwd-copy-pwd').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        const passwords = await PasswordManager.getAll();
+        const p = passwords.find(pwd => pwd.id === id);
+        if (p && p.password) {
+          await navigator.clipboard.writeText(p.password);
+          showToast('密码已复制');
+        }
+      });
+    });
+    
+    // 编辑
+    elements.pwdList.querySelectorAll('.pwd-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        openPasswordModal(id);
+      });
+    });
+    
+    // 删除
+    elements.pwdList.querySelectorAll('.pwd-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        const confirmed = await showConfirm('确定要删除这个密码吗？');
+        if (confirmed) {
+          await PasswordManager.remove(id);
+          await renderPasswordList();
+          showToast('密码已删除');
+        }
+      });
+    });
+    
+    // 多选复选框
+    elements.pwdList.querySelectorAll('.pwd-item-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const id = parseInt(cb.dataset.id);
+        if (e.target.checked) {
+          state.pwdSelectedIds.add(id);
+        } else {
+          state.pwdSelectedIds.delete(id);
+        }
+        updatePwdDeleteBtn();
+      });
+    });
+  }
+
+  // 更新删除按钮状态
+  function updatePwdDeleteBtn() {
+    if (!elements.pwdDeleteSelectedBtn) return;
+    const count = state.pwdSelectedIds.size;
+    if (count > 0) {
+      elements.pwdDeleteSelectedBtn.disabled = false;
+      elements.pwdDeleteSelectedBtn.title = `删除选中 (${count})`;
+    } else {
+      elements.pwdDeleteSelectedBtn.disabled = true;
+      elements.pwdDeleteSelectedBtn.title = '删除选中';
+    }
+  }
+
+  // 打开密码编辑弹窗
+  async function openPasswordModal(id = null) {
+    if (!elements.passwordModal) return;
+    state.pwdEditingId = id;
+    
+    // 重置表单
+    if (elements.passwordSiteName) elements.passwordSiteName.value = '';
+    if (elements.passwordSiteUrl) elements.passwordSiteUrl.value = '';
+    if (elements.passwordUsername) elements.passwordUsername.value = '';
+    if (elements.passwordValue) {
+      elements.passwordValue.value = '';
+      elements.passwordValue.type = 'password';
+    }
+    if (elements.passwordNotes) elements.passwordNotes.value = '';
+    
+    // 隐藏加密密钥输入框（明文存储不需要）
+    const encryptKeyGroup = document.querySelector('#passwordEncryptKey')?.closest('.form-group');
+    if (encryptKeyGroup) encryptKeyGroup.style.display = 'none';
+    
+    if (id) {
+      // 编辑模式
+      if (elements.passwordModalTitle) elements.passwordModalTitle.textContent = '编辑密码';
+      const passwords = await PasswordManager.getAll();
+      const p = passwords.find(pwd => pwd.id === id);
+      if (p) {
+        if (elements.passwordSiteName) elements.passwordSiteName.value = p.name || '';
+        if (elements.passwordSiteUrl) elements.passwordSiteUrl.value = p.url || '';
+        if (elements.passwordUsername) elements.passwordUsername.value = p.username || '';
+        if (elements.passwordValue) elements.passwordValue.value = p.password || '';
+        if (elements.passwordNotes) elements.passwordNotes.value = p.notes || '';
+      }
+    } else {
+      // 新增模式
+      if (elements.passwordModalTitle) elements.passwordModalTitle.textContent = '添加密码';
+    }
+    
+    elements.passwordModal.classList.add('show');
+  }
+
+  // 关闭密码编辑弹窗
+  function closePasswordModal() {
+    if (elements.passwordModal) elements.passwordModal.classList.remove('show');
+    state.pwdEditingId = null;
+  }
+
+  // 保存密码
+  async function savePassword() {
+    const name = elements.passwordSiteName?.value.trim() || '';
+    const url = elements.passwordSiteUrl?.value.trim() || '';
+    const username = elements.passwordUsername?.value.trim() || '';
+    const password = elements.passwordValue?.value || '';
+    const notes = elements.passwordNotes?.value.trim() || '';
+    
+    if (!url && !username) {
+      showAlert('请至少填写网址或用户名', 'error');
+      return;
+    }
+    
+    if (!password) {
+      showAlert('请填写密码', 'error');
+      return;
+    }
+    
+    const entry = { name, url, username, password, notes };
+    
+    if (state.pwdEditingId) {
+      await PasswordManager.update(state.pwdEditingId, entry);
+      showToast('密码已更新');
+    } else {
+      await PasswordManager.add(entry);
+      showToast('密码已保存');
+    }
+    
+    closePasswordModal();
+    await renderPasswordList();
+  }
+
+  // 删除选中的密码
+  async function deleteSelectedPasswords() {
+    const count = state.pwdSelectedIds.size;
+    if (count === 0) return;
+    
+    const confirmed = await showConfirm(`确定要删除选中的 ${count} 个密码吗？`);
+    if (!confirmed) return;
+    
+    await PasswordManager.removeMultiple(Array.from(state.pwdSelectedIds));
+    state.pwdSelectedIds.clear();
+    elements.pwdSelectAll.checked = false;
+    await renderPasswordList();
+    showToast(`已删除 ${count} 个密码`);
+  }
+
+  // 导入密码
+  async function handlePasswordImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const content = await file.text();
+      const result = await PasswordManager.importPasswords(content);
+      showToast(`成功导入 ${result.imported} 个密码`);
+      await renderPasswordList();
+    } catch (err) {
+      showAlert('导入失败: ' + err.message, 'error');
+    }
+    
+    e.target.value = '';
+  }
+
+  // 导出密码
+  async function exportPasswords() {
+    try {
+      const data = await PasswordManager.exportPasswords();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `passwords-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('密码已导出');
+    } catch (err) {
+      showAlert('导出失败: ' + err.message, 'error');
+    }
+  }
+
+  // 显示Toast提示
+  function showToast(message) {
+    // 移除已有的toast
+    const existing = document.querySelector('.toast-message');
+    if (existing) existing.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 10000;
+      animation: fadeInUp 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.animation = 'fadeOut 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, 2000);
+  }
+
+  // 自定义 Alert 弹窗
+  function showAlert(message, type = 'success') {
+    const overlay = document.getElementById('customAlertOverlay');
+    const messageEl = document.getElementById('customAlertMessage');
+    const iconEl = document.getElementById('customAlertIcon');
+    const btn = document.getElementById('customAlertBtn');
+    
+    if (!overlay || !messageEl) return;
+    
+    messageEl.textContent = message;
+    
+    // 设置图标类型
+    iconEl.className = 'custom-alert-icon';
+    if (type === 'error') {
+      iconEl.classList.add('error-icon');
+      iconEl.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48">
+        <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+      </svg>`;
+    } else if (type === 'info') {
+      iconEl.classList.add('info-icon');
+      iconEl.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48">
+        <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+      </svg>`;
+    } else {
+      iconEl.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48">
+        <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>`;
+    }
+    
+    overlay.classList.add('active');
+    
+    // 点击确定关闭
+    const closeHandler = () => {
+      overlay.classList.remove('active');
+      btn.removeEventListener('click', closeHandler);
+    };
+    btn.addEventListener('click', closeHandler);
+    
+    // ESC 关闭
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        overlay.classList.remove('active');
+        document.removeEventListener('keydown', escHandler);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
+  }
+
+  // 自定义 Confirm 弹窗
+  function showConfirm(message) {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('customConfirmOverlay');
+      const messageEl = document.getElementById('customConfirmMessage');
+      const cancelBtn = document.getElementById('customConfirmCancel');
+      const okBtn = document.getElementById('customConfirmOk');
+      
+      if (!overlay || !messageEl) {
+        resolve(confirm(message));
+        return;
+      }
+      
+      messageEl.textContent = message;
+      overlay.classList.add('active');
+      
+      const cleanup = () => {
+        overlay.classList.remove('active');
+        cancelBtn.removeEventListener('click', handleCancel);
+        okBtn.removeEventListener('click', handleOk);
+        document.removeEventListener('keydown', handleEsc);
+      };
+      
+      const handleCancel = () => {
+        cleanup();
+        resolve(false);
+      };
+      
+      const handleOk = () => {
+        cleanup();
+        resolve(true);
+      };
+      
+      const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+          cleanup();
+          resolve(false);
+        }
+      };
+      
+      cancelBtn.addEventListener('click', handleCancel);
+      okBtn.addEventListener('click', handleOk);
+      document.addEventListener('keydown', handleEsc);
+    });
+  }
+
+  // 自定义 Prompt 输入弹窗
+  function showPrompt(message, defaultValue = '') {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('customPromptOverlay');
+      const messageEl = document.getElementById('customPromptMessage');
+      const inputEl = document.getElementById('customPromptInput');
+      const cancelBtn = document.getElementById('customPromptCancel');
+      const okBtn = document.getElementById('customPromptOk');
+      
+      if (!overlay || !messageEl || !inputEl) {
+        resolve(prompt(message, defaultValue));
+        return;
+      }
+      
+      messageEl.textContent = message;
+      inputEl.value = defaultValue;
+      overlay.classList.add('active');
+      
+      // 自动聚焦并选中输入框内容
+      setTimeout(() => {
+        inputEl.focus();
+        inputEl.select();
+      }, 100);
+      
+      const cleanup = () => {
+        overlay.classList.remove('active');
+        cancelBtn.removeEventListener('click', handleCancel);
+        okBtn.removeEventListener('click', handleOk);
+        inputEl.removeEventListener('keydown', handleKeydown);
+        document.removeEventListener('keydown', handleEsc);
+      };
+      
+      const handleCancel = () => {
+        cleanup();
+        resolve(null);
+      };
+      
+      const handleOk = () => {
+        const value = inputEl.value.trim();
+        cleanup();
+        resolve(value || null);
+      };
+      
+      const handleKeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleOk();
+        }
+      };
+      
+      const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+          cleanup();
+          resolve(null);
+        }
+      };
+      
+      cancelBtn.addEventListener('click', handleCancel);
+      okBtn.addEventListener('click', handleOk);
+      inputEl.addEventListener('keydown', handleKeydown);
+      document.addEventListener('keydown', handleEsc);
+    });
+  }
+
+  // 导出选择弹窗（三选项：加密导出、不加密导出、取消）
+  function showExportChoice() {
+    return new Promise((resolve) => {
+      const overlay = elements.exportChoiceOverlay;
+      const encryptBtn = elements.exportChoiceEncrypt;
+      const plainBtn = elements.exportChoicePlain;
+      const cancelBtn = elements.exportChoiceCancel;
+      
+      if (!overlay) {
+        // 降级为直接不加密导出
+        resolve('plain');
+        return;
+      }
+      
+      overlay.classList.add('active');
+      
+      const cleanup = () => {
+        overlay.classList.remove('active');
+        encryptBtn.removeEventListener('click', handleEncrypt);
+        plainBtn.removeEventListener('click', handlePlain);
+        cancelBtn.removeEventListener('click', handleCancel);
+        document.removeEventListener('keydown', handleEsc);
+      };
+      
+      const handleEncrypt = () => {
+        cleanup();
+        resolve('encrypt');
+      };
+      
+      const handlePlain = () => {
+        cleanup();
+        resolve('plain');
+      };
+      
+      const handleCancel = () => {
+        cleanup();
+        resolve('cancel');
+      };
+      
+      const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+          cleanup();
+          resolve('cancel');
+        }
+      };
+      
+      encryptBtn.addEventListener('click', handleEncrypt);
+      plainBtn.addEventListener('click', handlePlain);
+      cancelBtn.addEventListener('click', handleCancel);
+      document.addEventListener('keydown', handleEsc);
+    });
+  }
+
+  // HTML转义
+  function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // 启动应用
