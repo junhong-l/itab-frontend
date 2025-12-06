@@ -19,6 +19,13 @@
   --bg-overlay: rgba(0, 0, 0, 0.3);
   --card-bg: rgba(255, 255, 255, 0.1);
   --card-bg-hover: rgba(255, 255, 255, 0.2);
+  /* 横条模式变量 */
+  --bar-width: 180px;
+  --bar-height: 40px;
+  --bar-gap: 8px;
+  --bar-columns: 4;
+  --folder-bar-height: 44px;
+  --layout-mode: grid;
 }
 
 body {
@@ -555,6 +562,7 @@ body {
 .partitions-bar {
   display: flex;
   justify-content: center;
+  align-items: center;
   margin-bottom: 15px;
 }
 
@@ -922,6 +930,7 @@ body.multi-select-mode .shortcut-item.selected {
 
 .settings-content {
   padding: 30px;
+  overflow: hidden;
 }
 
 .settings-header {
@@ -952,7 +961,7 @@ body.multi-select-mode .shortcut-item.selected {
 
 .settings-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
   margin-bottom: 30px;
 }
@@ -966,6 +975,8 @@ body.multi-select-mode .shortcut-item.selected {
   cursor: pointer;
   transition: all 0.3s;
   font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {
@@ -983,6 +994,19 @@ body.multi-select-mode .shortcut-item.selected {
 
 .settings-tab-content.active {
   display: block;
+}
+
+.setting-subheader {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 20px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 500;
+}
+
+.setting-subheader:first-child {
+  margin-top: 0;
 }
 
 .setting-group {
@@ -4013,4 +4037,428 @@ body.is-dragging .root-shortcuts .shortcuts-grid:empty::after {
 .export-choice-btn.btn-cancel:hover {
   background: rgba(255, 255, 255, 0.1);
   color: white;
+}
+
+/* ========== 布局模式选择器 ========== */
+.layout-mode-selector {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.layout-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 20px;
+  background: var(--card-bg);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 80px;
+}
+
+.layout-option:hover {
+  background: var(--card-bg-hover);
+}
+
+.layout-option input[type="radio"] {
+  display: none;
+}
+
+.layout-option input[type="radio"]:checked + .layout-icon {
+  color: var(--primary-color);
+}
+
+.layout-option:has(input:checked) {
+  border-color: var(--primary-color);
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.layout-icon {
+  color: var(--text-secondary);
+  transition: color 0.2s;
+}
+
+.layout-option span:last-child {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 文件夹展开/收缩按钮 */
+.partitions-bar .folder-toggle-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.folder-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--card-bg);
+  border: none;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+}
+
+.folder-toggle-btn:hover {
+  background: var(--card-bg-hover);
+  color: var(--text-color);
+}
+
+/* ========== 横条模式样式 ========== */
+.shortcuts-grid.bar-mode {
+  display: grid !important;
+  grid-template-columns: repeat(var(--bar-columns), var(--bar-width));
+  gap: var(--bar-gap);
+  justify-content: center;
+}
+
+.shortcuts-grid.bar-mode .shortcut {
+  width: var(--bar-width);
+  height: var(--bar-height);
+  flex-direction: row;
+  padding: 0 12px;
+  gap: 10px;
+  background: var(--card-bg);
+  border-radius: calc(var(--bar-height) / 4);
+  backdrop-filter: blur(10px);
+}
+
+.shortcuts-grid.bar-mode .shortcut:hover {
+  background: var(--card-bg-hover);
+  transform: translateY(-2px);
+}
+
+.shortcuts-grid.bar-mode .shortcut .icon {
+  width: calc(var(--bar-height) - 12px);
+  height: calc(var(--bar-height) - 12px);
+  min-width: calc(var(--bar-height) - 12px);
+  border-radius: calc(var(--bar-height) / 6);
+}
+
+.shortcuts-grid.bar-mode .shortcut .icon img {
+  width: 100%;
+  height: 100%;
+}
+
+.shortcuts-grid.bar-mode .shortcut .name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  flex: 1;
+}
+
+/* 横条模式文件夹 */
+.folders-container.bar-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.folders-container.bar-mode .folder-bar {
+  background: var(--card-bg);
+  border-radius: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  width: 100%;
+}
+
+.folder-bar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  height: var(--folder-bar-height);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.folder-bar-header:hover {
+  background: var(--card-bg-hover);
+}
+
+.folder-bar-header .folder-icon {
+  width: calc(var(--folder-bar-height) - 16px);
+  height: calc(var(--folder-bar-height) - 16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+  color: white;
+}
+
+.folder-bar-header .folder-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.folder-bar-header .folder-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-bar-header .folder-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.folder-bar-header .folder-toggle {
+  color: var(--text-secondary);
+  transition: transform 0.3s;
+}
+
+.folder-bar-header .folder-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.folder-bar.collapsed .folder-toggle {
+  transform: rotate(-90deg);
+}
+
+.folder-bar-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bar-gap);
+  padding: var(--bar-gap) 8px 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+}
+
+.folder-bar.collapsed .folder-bar-content {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+}
+
+.folder-bar-content .bar-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  flex: 1 1 calc(50% - var(--bar-gap));
+  min-width: 120px;
+  max-width: calc(50% - var(--bar-gap) / 2);
+  height: var(--bar-height);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: calc(var(--bar-height) / 4);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.folder-bar-content .bar-shortcut:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.folder-bar-content .bar-shortcut .icon {
+  width: calc(var(--bar-height) - 12px);
+  height: calc(var(--bar-height) - 12px);
+  min-width: calc(var(--bar-height) - 12px);
+  border-radius: calc(var(--bar-height) / 6);
+  overflow: hidden;
+}
+
+.folder-bar-content .bar-shortcut .icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.folder-bar-content .bar-shortcut .name {
+  flex: 1;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 常用书签区域横条模式 */
+.favorites-section.bar-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.favorites-section.bar-mode .favorites-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 28px;
+  background: var(--primary-color);
+  border-radius: var(--btn-radius);
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 15px;
+  color: #fff;
+}
+
+.favorites-section.bar-mode .favorites-title svg {
+  color: #ffc107;
+}
+
+.favorites-section.bar-mode .favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--bar-columns), var(--bar-width));
+  gap: var(--bar-gap);
+  justify-content: center;
+}
+
+.favorites-section.bar-mode .favorites-grid .bar-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  width: var(--bar-width);
+  height: var(--bar-height);
+  background: var(--card-bg);
+  border-radius: calc(var(--bar-height) / 4);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.favorites-section.bar-mode .favorites-grid .bar-shortcut:hover {
+  background: var(--card-bg-hover);
+  transform: translateY(-2px);
+}
+
+.favorites-section.bar-mode .favorites-grid .bar-shortcut .icon {
+  width: calc(var(--bar-height) - 12px);
+  height: calc(var(--bar-height) - 12px);
+  min-width: calc(var(--bar-height) - 12px);
+  border-radius: calc(var(--bar-height) / 6);
+  overflow: hidden;
+}
+
+.favorites-section.bar-mode .favorites-grid .bar-shortcut .icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.favorites-section.bar-mode .favorites-grid .bar-shortcut .name {
+  flex: 1;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+/* ========== 横条模式拖动样式 ========== */
+.folder-bar.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.folder-bar.drag-over {
+  border: 2px dashed var(--primary-color);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.folder-bar-content.drag-over {
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 8px;
+}
+
+.bar-shortcut.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+.bar-shortcut.drag-over {
+  border-left: 3px solid var(--primary-color);
+}
+
+/* 横条模式多选选中状态 */
+.bar-shortcut.selected {
+  background: rgba(99, 102, 241, 0.3);
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.bar-shortcut.selected::after {
+  content: '✓';
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.bar-shortcut .icon {
+  position: relative;
+}
+
+.bar-shortcut .pinned-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 14px;
+  height: 14px;
+  background: var(--primary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.folder-bar-header .drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-secondary);
+  cursor: grab;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.folder-bar-header .drag-handle:hover {
+  opacity: 1;
+}
+
+.folder-bar-header .drag-handle:active {
+  cursor: grabbing;
 }

@@ -186,25 +186,86 @@
       <!-- 外观设置 -->
       <div class="settings-tab-content" id="tab-appearance">
         <div class="setting-group">
-          <label>图标大小</label>
-          <input type="range" id="iconSize" min="48" max="96" value="64">
-          <span id="iconSizeValue">64px</span>
+          <label>布局模式</label>
+          <div class="layout-mode-selector">
+            <label class="layout-option">
+              <input type="radio" name="layoutMode" value="grid" id="layoutModeGrid" checked>
+              <span class="layout-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                  <path fill="currentColor" d="M3 3h8v8H3V3zm0 10h8v8H3v-8zm10-10h8v8h-8V3zm0 10h8v8h-8v-8z"/>
+                </svg>
+              </span>
+              <span>网格</span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" name="layoutMode" value="bar" id="layoutModeBar">
+              <span class="layout-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                  <path fill="currentColor" d="M3 5h18v3H3V5zm0 6h18v3H3v-3zm0 6h18v3H3v-3z"/>
+                </svg>
+              </span>
+              <span>横条</span>
+            </label>
+          </div>
         </div>
-        <div class="setting-group">
-          <label>文件夹大小</label>
-          <input type="range" id="folderSize" min="50" max="120" value="65">
-          <span id="folderSizeValue">65px</span>
+
+        <!-- 网格模式设置 -->
+        <div class="grid-mode-settings" id="gridModeSettings">
+          <div class="setting-group">
+            <label>图标大小</label>
+            <input type="range" id="iconSize" min="48" max="96" value="64">
+            <span id="iconSizeValue">64px</span>
+          </div>
+          <div class="setting-group">
+            <label>文件夹大小</label>
+            <input type="range" id="folderSize" min="50" max="120" value="65">
+            <span id="folderSizeValue">65px</span>
+          </div>
+          <div class="setting-group">
+            <label>图标间距</label>
+            <input type="range" id="iconGap" min="5" max="40" value="15">
+            <span id="iconGapValue">15px</span>
+          </div>
+          <div class="setting-group">
+            <label>文件夹间距</label>
+            <input type="range" id="folderGap" min="5" max="50" value="20">
+            <span id="folderGapValue">20px</span>
+          </div>
         </div>
-        <div class="setting-group">
-          <label>图标间距</label>
-          <input type="range" id="iconGap" min="5" max="40" value="15">
-          <span id="iconGapValue">15px</span>
+
+        <!-- 横条模式设置 -->
+        <div class="bar-mode-settings" id="barModeSettings" style="display: none;">
+          <div class="setting-subheader">书签横条</div>
+          <div class="setting-group">
+            <label>横条宽度</label>
+            <input type="range" id="barWidth" min="120" max="300" value="180">
+            <span id="barWidthValue">180px</span>
+          </div>
+          <div class="setting-group">
+            <label>横条高度</label>
+            <input type="range" id="barHeight" min="32" max="56" value="40">
+            <span id="barHeightValue">40px</span>
+          </div>
+          <div class="setting-group">
+            <label>横条间距</label>
+            <input type="range" id="barGap" min="4" max="20" value="8">
+            <span id="barGapValue">8px</span>
+          </div>
+          <div class="setting-group">
+            <label>每行数量</label>
+            <input type="range" id="barColumns" min="2" max="8" value="4">
+            <span id="barColumnsValue">4个</span>
+          </div>
+          
+          <div class="setting-subheader">文件夹横条</div>
+          <div class="setting-group">
+            <label>文件夹高度</label>
+            <input type="range" id="folderBarHeight" min="36" max="60" value="44">
+            <span id="folderBarHeightValue">44px</span>
+          </div>
         </div>
-        <div class="setting-group">
-          <label>文件夹间距</label>
-          <input type="range" id="folderGap" min="5" max="50" value="20">
-          <span id="folderGapValue">20px</span>
-        </div>
+
+        <!-- 通用设置 -->
         <div class="setting-group">
           <label>图标圆角</label>
           <input type="range" id="iconRadius" min="0" max="50" value="12">

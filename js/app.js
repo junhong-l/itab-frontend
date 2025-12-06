@@ -103,6 +103,21 @@
     searchRadiusValue: $('#searchRadiusValue'),
     btnRadius: $('#btnRadius'),
     btnRadiusValue: $('#btnRadiusValue'),
+    // 布局模式
+    layoutModeGrid: $('#layoutModeGrid'),
+    layoutModeBar: $('#layoutModeBar'),
+    gridModeSettings: $('#gridModeSettings'),
+    barModeSettings: $('#barModeSettings'),
+    barWidth: $('#barWidth'),
+    barWidthValue: $('#barWidthValue'),
+    barHeight: $('#barHeight'),
+    barHeightValue: $('#barHeightValue'),
+    barGap: $('#barGap'),
+    barGapValue: $('#barGapValue'),
+    barColumns: $('#barColumns'),
+    barColumnsValue: $('#barColumnsValue'),
+    folderBarHeight: $('#folderBarHeight'),
+    folderBarHeightValue: $('#folderBarHeightValue'),
     bookmarkFileInput: $('#bookmarkFileInput'),
     importPreview: $('#importPreview'),
     exportDataBtn: $('#exportDataBtn'),
@@ -509,6 +524,7 @@
     state.searchEngines = data.searchEngines;
     state.currentEngine = data.currentEngine;
     state.settings = data.settings;
+    state.standaloneCollapsed = data.standaloneCollapsed || false;
 
     // 兼容旧数据：确保两个区域都有默认工作区
     ensureDefaultPartitions();
@@ -697,8 +713,435 @@
     return filtered;
   }
 
+  // 横条模式渲染
+  function renderShortcutsBarMode() {
+    elements.shortcutsSection.innerHTML = '';
+    
+    const currentPartitionId = getCurrentPartitionId();
+    
+    // 获取当前分区钉住的书签
+    const pinnedShortcuts = state.shortcuts.filter(s => {
+      if (!s.isPinned) return false;
+      if (!!s.isPrivate !== state.privateMode) return false;
+      // 按分区过滤，每个工作区有自己的常用（没有设置分区的书签显示在所有分区）
+      if (s.partitionId && s.partitionId !== currentPartitionId) return false;
+      return true;
+    }).sort((a, b) => (a.pinnedOrder || 0) - (b.pinnedOrder || 0));
+    
+    // 常用区域
+    if (pinnedShortcuts.length > 0) {
+      const favSection = document.createElement('div');
+      favSection.className = 'favorites-section bar-mode';
+      
+      const favTitle = document.createElement('div');
+      favTitle.className = 'favorites-title';
+      favTitle.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+        <span>常用</span>
+      `;
+      favSection.appendChild(favTitle);
+      
+      const favGrid = document.createElement('div');
+      favGrid.className = 'favorites-grid';
+      
+      pinnedShortcuts.forEach(shortcut => {
+        favGrid.appendChild(createBarShortcutElement(shortcut, true));
+      });
+      
+      favSection.appendChild(favGrid);
+      elements.shortcutsSection.appendChild(favSection);
+    }
+    
+    // 分区标签栏
+    const foldersSection = document.createElement('div');
+    foldersSection.className = 'folders-section bar-mode';
+    
+    const partitionsBar = createPartitionsBar();
+    foldersSection.appendChild(partitionsBar);
+    
+    // 文件夹区域
+    const foldersContainer = document.createElement('div');
+    foldersContainer.className = 'folders-container bar-mode';
+    
+    // 先渲染独立书签（放在最前面）
+    const standaloneShortcuts = state.shortcuts.filter(s => {
+      if (s.folderId) return false;
+      if (!!s.isPrivate !== state.privateMode) return false;
+      if (s.partitionId && s.partitionId !== currentPartitionId) return false;
+      return true;
+    });
+    
+    if (standaloneShortcuts.length > 0) {
+      const isStandaloneCollapsed = state.standaloneCollapsed || false;
+      
+      const standaloneSection = document.createElement('div');
+      standaloneSection.className = 'folder-bar standalone-bar' + (isStandaloneCollapsed ? ' collapsed' : '');
+      standaloneSection.innerHTML = `
+        <div class="folder-bar-header">
+          <div class="folder-icon" style="background: rgba(255, 255, 255, 0.2);">
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+          </div>
+          <span class="folder-name">独立书签</span>
+          <span class="folder-count">${standaloneShortcuts.length}</span>
+          <div class="folder-toggle">
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+          </div>
+        </div>
+      `;
+      
+      const standaloneContent = document.createElement('div');
+      standaloneContent.className = 'folder-bar-content';
+      standaloneContent.dataset.folderId = '';
+      
+      // 支持拖入独立书签区域
+      standaloneContent.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = document.querySelector('.bar-shortcut.dragging');
+        if (dragging) {
+          standaloneContent.classList.add('drag-over');
+        }
+      });
+      
+      standaloneContent.addEventListener('dragleave', (e) => {
+        if (!standaloneContent.contains(e.relatedTarget)) {
+          standaloneContent.classList.remove('drag-over');
+        }
+      });
+      
+      standaloneContent.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        standaloneContent.classList.remove('drag-over');
+        
+        try {
+          const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+          if (data.type === 'shortcut') {
+            const shortcutIndex = state.shortcuts.findIndex(s => s.id === data.id);
+            if (shortcutIndex !== -1 && state.shortcuts[shortcutIndex].folderId) {
+              // 从文件夹移出变成独立书签
+              state.shortcuts[shortcutIndex].folderId = null;
+              await Storage.set('shortcuts', state.shortcuts);
+              renderShortcuts();
+            }
+          }
+        } catch (err) {}
+      });
+      
+      standaloneShortcuts.forEach(shortcut => {
+        standaloneContent.appendChild(createBarShortcutElement(shortcut, false));
+      });
+      
+      standaloneSection.appendChild(standaloneContent);
+      
+      standaloneSection.querySelector('.folder-bar-header').addEventListener('click', async () => {
+        const isCollapsed = standaloneSection.classList.toggle('collapsed');
+        state.standaloneCollapsed = isCollapsed;
+        await Storage.set('standaloneCollapsed', isCollapsed);
+      });
+      
+      foldersContainer.appendChild(standaloneSection);
+    }
+    
+    // 获取当前分区的文件夹
+    const visibleFolders = filterFolders(state.folders);
+    
+    visibleFolders.forEach(folder => {
+      const folderShortcuts = state.shortcuts.filter(s => {
+        if (s.folderId !== folder.id) return false;
+        if (!!s.isPrivate !== state.privateMode) return false;
+        return true;
+      });
+      
+      const folderBar = document.createElement('div');
+      folderBar.className = 'folder-bar' + (folder.collapsed ? ' collapsed' : '');
+      folderBar.dataset.folderId = folder.id;
+      folderBar.draggable = true;
+      
+      // 文件夹拖动事件
+      folderBar.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        folderBar.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'folder', id: folder.id }));
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      
+      folderBar.addEventListener('dragend', () => {
+        folderBar.classList.remove('dragging');
+        document.querySelectorAll('.folder-bar').forEach(f => f.classList.remove('drag-over'));
+      });
+      
+      folderBar.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const draggingFolder = document.querySelector('.folder-bar.dragging');
+        if (draggingFolder && draggingFolder !== folderBar) {
+          folderBar.classList.add('drag-over');
+        }
+      });
+      
+      folderBar.addEventListener('dragleave', (e) => {
+        if (!folderBar.contains(e.relatedTarget)) {
+          folderBar.classList.remove('drag-over');
+        }
+      });
+      
+      folderBar.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        folderBar.classList.remove('drag-over');
+        
+        try {
+          const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+          if (data.type === 'folder' && data.id !== folder.id) {
+            // 文件夹排序
+            const draggedIndex = state.folders.findIndex(f => f.id === data.id);
+            const targetIndex = state.folders.findIndex(f => f.id === folder.id);
+            if (draggedIndex !== -1 && targetIndex !== -1) {
+              const [draggedFolder] = state.folders.splice(draggedIndex, 1);
+              state.folders.splice(targetIndex, 0, draggedFolder);
+              // 更新顺序
+              state.folders.forEach((f, i) => f.order = i);
+              await Storage.set('folders', state.folders);
+              renderShortcuts();
+            }
+          } else if (data.type === 'shortcut') {
+            // 书签拖入文件夹
+            const shortcutIndex = state.shortcuts.findIndex(s => s.id === data.id);
+            if (shortcutIndex !== -1) {
+              state.shortcuts[shortcutIndex].folderId = folder.id;
+              await Storage.set('shortcuts', state.shortcuts);
+              renderShortcuts();
+            }
+          }
+        } catch (err) {}
+      });
+      
+      // 文件夹头部
+      const header = document.createElement('div');
+      header.className = 'folder-bar-header';
+      header.innerHTML = `
+        <div class="drag-handle">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </div>
+        <div class="folder-icon">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+        </div>
+        <span class="folder-name">${escapeHtml(folder.name)}</span>
+        <span class="folder-count">${folderShortcuts.length}</span>
+        <div class="folder-toggle">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+        </div>
+      `;
+      
+      // 点击展开/收起（排除拖动手柄）
+      header.addEventListener('click', async (e) => {
+        if (e.target.closest('.drag-handle')) return;
+        const isCollapsed = folderBar.classList.toggle('collapsed');
+        const folderIndex = state.folders.findIndex(f => f.id === folder.id);
+        if (folderIndex !== -1) {
+          state.folders[folderIndex].collapsed = isCollapsed;
+          await Storage.set('folders', state.folders);
+        }
+      });
+      
+      // 右键菜单
+      header.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showFolderContextMenu(e.clientX, e.clientY, folder.id);
+      });
+      
+      folderBar.appendChild(header);
+      
+      // 文件夹内容
+      const content = document.createElement('div');
+      content.className = 'folder-bar-content';
+      content.dataset.folderId = folder.id;
+      
+      // 文件夹内容拖放
+      content.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = document.querySelector('.bar-shortcut.dragging');
+        if (dragging) {
+          content.classList.add('drag-over');
+        }
+      });
+      
+      content.addEventListener('dragleave', (e) => {
+        if (!content.contains(e.relatedTarget)) {
+          content.classList.remove('drag-over');
+        }
+      });
+      
+      content.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        content.classList.remove('drag-over');
+        
+        try {
+          const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+          if (data.type === 'shortcut') {
+            const shortcutIndex = state.shortcuts.findIndex(s => s.id === data.id);
+            if (shortcutIndex !== -1 && state.shortcuts[shortcutIndex].folderId !== folder.id) {
+              state.shortcuts[shortcutIndex].folderId = folder.id;
+              await Storage.set('shortcuts', state.shortcuts);
+              renderShortcuts();
+            }
+          }
+        } catch (err) {}
+      });
+      
+      folderShortcuts.forEach(shortcut => {
+        content.appendChild(createBarShortcutElement(shortcut, false));
+      });
+      
+      folderBar.appendChild(content);
+      foldersContainer.appendChild(folderBar);
+    });
+    
+    foldersSection.appendChild(foldersContainer);
+    
+    elements.shortcutsSection.appendChild(foldersSection);
+  }
+  
+  // 创建横条模式的书签元素
+  function createBarShortcutElement(shortcut, isPinned = false) {
+    const item = document.createElement('div');
+    item.className = 'bar-shortcut' + (isPinned ? ' pinned' : '');
+    item.dataset.id = shortcut.id;
+    item.draggable = true;
+    
+    const faviconUrls = getAllFaviconUrls(shortcut.url);
+    
+    const pinnedBadge = shortcut.isPinned ? `
+      <div class="pinned-badge">
+        <svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M17 4v7l2 3v2h-6v5l-1 1-1-1v-5H5v-2l2-3V4c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2z"/></svg>
+      </div>
+    ` : '';
+    
+    item.innerHTML = `
+      <div class="icon">
+        <img src="${DEFAULT_ICON_SVG}" alt="">
+        ${pinnedBadge}
+      </div>
+      <span class="name">${escapeHtml(shortcut.name)}</span>
+    `;
+    
+    // 加载图标
+    const img = item.querySelector('img');
+    if (shortcut.icon || faviconUrls.length > 0) {
+      let fallbackIndex = 0;
+      img.onerror = () => {
+        if (fallbackIndex < faviconUrls.length) {
+          img.src = faviconUrls[fallbackIndex++];
+        } else {
+          img.src = DEFAULT_ICON_SVG;
+        }
+      };
+      img.src = shortcut.icon || faviconUrls[0];
+      if (!shortcut.icon) fallbackIndex = 1;
+    }
+    
+    // 拖动事件
+    item.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+      item.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'shortcut', id: shortcut.id }));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      document.querySelectorAll('.bar-shortcut').forEach(s => s.classList.remove('drag-over'));
+      document.querySelectorAll('.folder-bar-content').forEach(c => c.classList.remove('drag-over'));
+    });
+    
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dragging = document.querySelector('.bar-shortcut.dragging');
+      if (dragging && dragging !== item) {
+        item.classList.add('drag-over');
+      }
+    });
+    
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over');
+    });
+    
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      item.classList.remove('drag-over');
+      
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        if (data.type === 'shortcut' && data.id !== shortcut.id) {
+          const draggedShortcut = state.shortcuts.find(s => s.id === data.id);
+          const targetShortcut = state.shortcuts.find(s => s.id === shortcut.id);
+          
+          if (!draggedShortcut || !targetShortcut) return;
+          
+          // 如果两个书签都是钉住的，使用钉住书签排序逻辑
+          if (draggedShortcut.isPinned && targetShortcut.isPinned) {
+            await reorderPinnedShortcuts(data.id, shortcut.id, true);
+            return;
+          }
+          
+          // 普通书签排序
+          const draggedIndex = state.shortcuts.findIndex(s => s.id === data.id);
+          const targetIndex = state.shortcuts.findIndex(s => s.id === shortcut.id);
+          if (draggedIndex !== -1 && targetIndex !== -1) {
+            // 移动到同一个文件夹
+            draggedShortcut.folderId = targetShortcut.folderId;
+            
+            // 重新排序
+            const [removed] = state.shortcuts.splice(draggedIndex, 1);
+            const newTargetIndex = state.shortcuts.findIndex(s => s.id === shortcut.id);
+            state.shortcuts.splice(newTargetIndex, 0, removed);
+            
+            await Storage.set('shortcuts', state.shortcuts);
+            renderShortcuts();
+          }
+        }
+      } catch (err) {}
+    });
+    
+    // 点击打开链接（后台打开）
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (item.classList.contains('dragging')) return;
+      
+      // 多选模式下切换选中状态
+      if (state.multiSelectMode) {
+        toggleShortcutSelection(shortcut.id, item);
+        return;
+      }
+      
+      openInBackground(shortcut.url);
+    });
+    
+    // 右键菜单
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      // 多选模式下右键也是切换选中
+      if (state.multiSelectMode) {
+        toggleShortcutSelection(shortcut.id, item);
+        return;
+      }
+      showContextMenu(e.clientX, e.clientY, shortcut.id);
+    });
+    
+    return item;
+  }
+
   // 渲染快捷方式（按文件夹分组）
   function renderShortcuts() {
+    // 检查布局模式
+    if (state.settings.layoutMode === 'bar') {
+      renderShortcutsBarMode();
+      return;
+    }
+    
     elements.shortcutsSection.innerHTML = '';
 
     const isSearching = !!state.bookmarkSearchQuery;
@@ -791,12 +1234,12 @@
     // 获取当前分区ID
     const currentPartitionId = getCurrentPartitionId();
     
-    // 获取被钉住的书签（用于常用区域显示）
+    // 获取当前分区钉住的书签（每个工作区有自己的常用）
     const pinnedShortcuts = state.shortcuts.filter(s => {
       if (!s.isPinned) return false; // 必须被钉住
       // 隐私模式显示隐私书签，普通模式显示普通书签
       if (!!s.isPrivate !== state.privateMode) return false;
-      // 分区过滤
+      // 按分区过滤（没有设置分区的书签显示在所有分区）
       if (s.partitionId && s.partitionId !== currentPartitionId) return false;
       return true;
     });
@@ -1368,7 +1811,7 @@
   async function reorderPinnedShortcuts(draggedId, targetId, insertBefore) {
     const currentPartitionId = getCurrentPartitionId();
     
-    // 获取当前分区的钉住书签
+    // 获取当前分区钉住的书签
     const pinnedShortcuts = state.shortcuts.filter(s => {
       if (!s.isPinned) return false; // 必须被钉住
       if (!!s.isPrivate !== state.privateMode) return false;
@@ -1376,7 +1819,7 @@
       return true;
     });
     
-    // 其他书签（非钉住的或不在当前分区的）
+    // 其他书签（非钉住的或不在当前分区的钉住书签）
     const otherShortcuts = state.shortcuts.filter(s => {
       if (!s.isPinned) return true; // 非钉住的
       if (!!s.isPrivate !== state.privateMode) return true;
@@ -2111,6 +2554,12 @@
     if (!settings.iconGap) settings.iconGap = 15;
     if (!settings.folderGap) settings.folderGap = 20;
     if (!settings.btnRadius) settings.btnRadius = 12;
+    if (!settings.layoutMode) settings.layoutMode = 'grid';
+    if (!settings.barWidth) settings.barWidth = 180;
+    if (!settings.barHeight) settings.barHeight = 40;
+    if (!settings.barGap) settings.barGap = 8;
+    if (!settings.barColumns) settings.barColumns = 4;
+    if (!settings.folderBarHeight) settings.folderBarHeight = 44;
 
     // 应用背景
     applyBackground();
@@ -2123,6 +2572,13 @@
     document.documentElement.style.setProperty('--icon-radius', settings.iconRadius + 'px');
     document.documentElement.style.setProperty('--search-radius', settings.searchRadius + 'px');
     document.documentElement.style.setProperty('--btn-radius', settings.btnRadius + 'px');
+    
+    // 应用横条模式变量
+    document.documentElement.style.setProperty('--bar-width', settings.barWidth + 'px');
+    document.documentElement.style.setProperty('--bar-height', settings.barHeight + 'px');
+    document.documentElement.style.setProperty('--bar-gap', settings.barGap + 'px');
+    document.documentElement.style.setProperty('--bar-columns', settings.barColumns);
+    document.documentElement.style.setProperty('--folder-bar-height', (settings.folderBarHeight || 44) + 'px');
 
     // 更新设置面板的值
     elements.bgType.value = settings.bgType;
@@ -2145,6 +2601,27 @@
     elements.searchRadiusValue.textContent = settings.searchRadius + 'px';
     elements.btnRadius.value = settings.btnRadius;
     elements.btnRadiusValue.textContent = settings.btnRadius + 'px';
+
+    // 布局模式设置
+    if (settings.layoutMode === 'bar') {
+      elements.layoutModeBar.checked = true;
+      elements.gridModeSettings.style.display = 'none';
+      elements.barModeSettings.style.display = 'block';
+    } else {
+      elements.layoutModeGrid.checked = true;
+      elements.gridModeSettings.style.display = 'block';
+      elements.barModeSettings.style.display = 'none';
+    }
+    elements.barWidth.value = settings.barWidth;
+    elements.barWidthValue.textContent = settings.barWidth + 'px';
+    elements.barHeight.value = settings.barHeight;
+    elements.barHeightValue.textContent = settings.barHeight + 'px';
+    elements.barGap.value = settings.barGap;
+    elements.barGapValue.textContent = settings.barGap + 'px';
+    elements.barColumns.value = settings.barColumns;
+    elements.barColumnsValue.textContent = settings.barColumns + '个';
+    elements.folderBarHeight.value = settings.folderBarHeight || 44;
+    elements.folderBarHeightValue.textContent = (settings.folderBarHeight || 44) + 'px';
 
     // 显示/隐藏背景设置
     updateBgTypeUI();
@@ -3033,7 +3510,7 @@
     }
     
     const data = {
-      version: '2.0',
+      version: '2.1',
       exportDate: new Date().toISOString(),
       passwordsEncrypted: isEncrypted,
       data: {
@@ -3045,6 +3522,7 @@
         partitions: state.partitions,
         currentPartition: state.currentPartition,
         currentPrivatePartition: state.currentPrivatePartition,
+        standaloneCollapsed: state.standaloneCollapsed,
         passwords: exportPasswords
       }
     };
@@ -3144,6 +3622,10 @@
         <div class="backup-info-row">
           <span class="label">密码数量</span>
           <span class="value highlight">${passwordCount} 个${passwordsEncrypted ? ' <span style="color: #4a9eff; font-size: 12px;">(已加密)</span>' : ''}</span>
+        </div>
+        <div class="backup-info-row">
+          <span class="label">布局模式</span>
+          <span class="value">${data.settings?.layoutMode === 'bar' ? '横条模式' : '网格模式'}</span>
         </div>
         <div class="backup-info-row">
           <span class="label">外观设置</span>
@@ -3345,21 +3827,36 @@
     // 导入设置（如果有）
     if (data.settings && typeof data.settings === 'object') {
       state.settings = {
+        // 背景设置
         bgType: data.settings.bgType || 'gradient',
         gradientColor1: data.settings.gradientColor1 || '#667eea',
         gradientColor2: data.settings.gradientColor2 || '#764ba2',
         gradientAngle: data.settings.gradientAngle ?? 135,
         solidColor: data.settings.solidColor || '#1a1a2e',
         bgImage: data.settings.bgImage || '',
+        // 图标设置
         iconSize: data.settings.iconSize ?? 57,
         folderSize: data.settings.folderSize ?? 65,
         iconGap: data.settings.iconGap ?? 15,
         folderGap: data.settings.folderGap ?? 20,
         iconRadius: data.settings.iconRadius ?? 11,
         searchRadius: data.settings.searchRadius ?? 16,
-        btnRadius: data.settings.btnRadius ?? 12
+        btnRadius: data.settings.btnRadius ?? 12,
+        // 布局模式设置
+        layoutMode: data.settings.layoutMode || 'grid',
+        barWidth: data.settings.barWidth ?? 180,
+        barHeight: data.settings.barHeight ?? 40,
+        barGap: data.settings.barGap ?? 8,
+        barColumns: data.settings.barColumns ?? 4,
+        folderBarHeight: data.settings.folderBarHeight ?? 44
       };
       await Storage.set('settings', state.settings);
+    }
+
+    // 导入独立书签折叠状态
+    if (data.standaloneCollapsed !== undefined) {
+      state.standaloneCollapsed = data.standaloneCollapsed;
+      await Storage.set('standaloneCollapsed', state.standaloneCollapsed);
     }
 
     // 导入密码（如果有）
@@ -3499,8 +3996,9 @@
     state.selectedShortcuts.clear();
     document.body.classList.remove('multi-select-mode');
     elements.multiSelectBar.classList.remove('show');
-    // 移除所有选中状态
+    // 移除所有选中状态（支持网格模式和横条模式）
     $$('.shortcut-item.selected').forEach(item => item.classList.remove('selected'));
+    $$('.bar-shortcut.selected').forEach(item => item.classList.remove('selected'));
   }
 
   // 切换书签选中状态
@@ -3520,17 +4018,40 @@
     elements.selectedCount.textContent = state.selectedShortcuts.size;
   }
 
-  // 全选所有书签
+  // 全选当前工作区的书签
   function selectAllShortcuts() {
-    state.shortcuts.forEach(s => state.selectedShortcuts.add(s.id));
-    $$('.shortcut-item').forEach(item => item.classList.add('selected'));
+    const currentPartitionId = getCurrentPartitionId();
+    
+    // 只选择当前工作区的书签
+    state.shortcuts.forEach(s => {
+      // 检查是否在当前工作区
+      if (!!s.isPrivate !== state.privateMode) return;
+      if (s.partitionId && s.partitionId !== currentPartitionId) return;
+      state.selectedShortcuts.add(s.id);
+    });
+    
+    // 支持网格模式和横条模式 - 只选择页面上可见的书签元素
+    $$('.shortcut-item').forEach(item => {
+      const id = parseInt(item.dataset.id);
+      if (state.selectedShortcuts.has(id)) {
+        item.classList.add('selected');
+      }
+    });
+    $$('.bar-shortcut').forEach(item => {
+      const id = parseInt(item.dataset.id);
+      if (state.selectedShortcuts.has(id)) {
+        item.classList.add('selected');
+      }
+    });
     updateSelectedCount();
   }
 
   // 取消全选
   function deselectAllShortcuts() {
     state.selectedShortcuts.clear();
+    // 支持网格模式和横条模式
     $$('.shortcut-item.selected').forEach(item => item.classList.remove('selected'));
+    $$('.bar-shortcut.selected').forEach(item => item.classList.remove('selected'));
     updateSelectedCount();
   }
 
@@ -3877,6 +4398,59 @@
       await Storage.set('settings', state.settings);
     });
 
+    // 布局模式切换
+    elements.layoutModeGrid.addEventListener('change', async () => {
+      state.settings.layoutMode = 'grid';
+      elements.gridModeSettings.style.display = 'block';
+      elements.barModeSettings.style.display = 'none';
+      await Storage.set('settings', state.settings);
+      renderShortcuts();
+    });
+
+    elements.layoutModeBar.addEventListener('change', async () => {
+      state.settings.layoutMode = 'bar';
+      elements.gridModeSettings.style.display = 'none';
+      elements.barModeSettings.style.display = 'block';
+      await Storage.set('settings', state.settings);
+      renderShortcuts();
+    });
+
+    // 横条模式设置
+    elements.barWidth.addEventListener('input', async () => {
+      state.settings.barWidth = parseInt(elements.barWidth.value);
+      elements.barWidthValue.textContent = elements.barWidth.value + 'px';
+      document.documentElement.style.setProperty('--bar-width', elements.barWidth.value + 'px');
+      await Storage.set('settings', state.settings);
+    });
+
+    elements.barHeight.addEventListener('input', async () => {
+      state.settings.barHeight = parseInt(elements.barHeight.value);
+      elements.barHeightValue.textContent = elements.barHeight.value + 'px';
+      document.documentElement.style.setProperty('--bar-height', elements.barHeight.value + 'px');
+      await Storage.set('settings', state.settings);
+    });
+
+    elements.barGap.addEventListener('input', async () => {
+      state.settings.barGap = parseInt(elements.barGap.value);
+      elements.barGapValue.textContent = elements.barGap.value + 'px';
+      document.documentElement.style.setProperty('--bar-gap', elements.barGap.value + 'px');
+      await Storage.set('settings', state.settings);
+    });
+
+    elements.barColumns.addEventListener('input', async () => {
+      state.settings.barColumns = parseInt(elements.barColumns.value);
+      elements.barColumnsValue.textContent = elements.barColumns.value + '个';
+      document.documentElement.style.setProperty('--bar-columns', elements.barColumns.value);
+      await Storage.set('settings', state.settings);
+    });
+
+    elements.folderBarHeight.addEventListener('input', async () => {
+      state.settings.folderBarHeight = parseInt(elements.folderBarHeight.value);
+      elements.folderBarHeightValue.textContent = elements.folderBarHeight.value + 'px';
+      document.documentElement.style.setProperty('--folder-bar-height', elements.folderBarHeight.value + 'px');
+      await Storage.set('settings', state.settings);
+    });
+
     // 书签导入
     elements.bookmarkFileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -4215,6 +4789,41 @@
     });
     
     bar.appendChild(inner);
+    
+    // 横条模式下添加展开/收缩按钮
+    if (state.settings.layoutMode === 'bar') {
+      const toggleBtns = document.createElement('div');
+      toggleBtns.className = 'folder-toggle-buttons';
+      
+      const expandBtn = document.createElement('button');
+      expandBtn.className = 'folder-toggle-btn';
+      expandBtn.title = '全部展开';
+      expandBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z"/></svg>';
+      expandBtn.addEventListener('click', async () => {
+        state.folders = state.folders.map(f => ({ ...f, collapsed: false }));
+        state.standaloneCollapsed = false;
+        await Storage.set('folders', state.folders);
+        await Storage.set('standaloneCollapsed', false);
+        renderShortcuts();
+      });
+      
+      const collapseBtn = document.createElement('button');
+      collapseBtn.className = 'folder-toggle-btn';
+      collapseBtn.title = '全部收缩';
+      collapseBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7.41 18.59L8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z"/></svg>';
+      collapseBtn.addEventListener('click', async () => {
+        state.folders = state.folders.map(f => ({ ...f, collapsed: true }));
+        state.standaloneCollapsed = true;
+        await Storage.set('folders', state.folders);
+        await Storage.set('standaloneCollapsed', true);
+        renderShortcuts();
+      });
+      
+      toggleBtns.appendChild(expandBtn);
+      toggleBtns.appendChild(collapseBtn);
+      bar.appendChild(toggleBtns);
+    }
+    
     return bar;
   }
 
@@ -4877,6 +5486,7 @@
     state.settings = latestData.settings || state.settings;
     state.currentPartition = latestData.currentPartition || state.currentPartition;
     state.currentPrivatePartition = latestData.currentPrivatePartition || state.currentPrivatePartition;
+    state.standaloneCollapsed = latestData.standaloneCollapsed || false;
 
     // 获取密码数据
     const passwords = await PasswordManager.getAll();
@@ -4913,7 +5523,8 @@
         currentEngine: state.currentEngine,
         settings: state.settings,
         currentPartition: state.currentPartition,
-        currentPrivatePartition: state.currentPrivatePartition
+        currentPrivatePartition: state.currentPrivatePartition,
+        standaloneCollapsed: state.standaloneCollapsed
       };
       
       // 只有当有密码数据时才添加 passwords 字段
@@ -5031,21 +5642,36 @@
       // 导入设置
       if (data.settings && typeof data.settings === 'object') {
         state.settings = {
+          // 背景设置
           bgType: data.settings.bgType || 'gradient',
           gradientColor1: data.settings.gradientColor1 || '#667eea',
           gradientColor2: data.settings.gradientColor2 || '#764ba2',
           gradientAngle: data.settings.gradientAngle ?? 135,
           solidColor: data.settings.solidColor || '#1a1a2e',
           bgImage: data.settings.bgImage || '',
+          // 图标设置
           iconSize: data.settings.iconSize ?? 57,
           folderSize: data.settings.folderSize ?? 65,
           iconGap: data.settings.iconGap ?? 15,
           folderGap: data.settings.folderGap ?? 20,
           iconRadius: data.settings.iconRadius ?? 11,
           searchRadius: data.settings.searchRadius ?? 16,
-          btnRadius: data.settings.btnRadius ?? 12
+          btnRadius: data.settings.btnRadius ?? 12,
+          // 布局模式设置
+          layoutMode: data.settings.layoutMode || 'grid',
+          barWidth: data.settings.barWidth ?? 180,
+          barHeight: data.settings.barHeight ?? 40,
+          barGap: data.settings.barGap ?? 8,
+          barColumns: data.settings.barColumns ?? 4,
+          folderBarHeight: data.settings.folderBarHeight ?? 44
         };
         await Storage.set('settings', state.settings);
+      }
+
+      // 导入独立书签折叠状态
+      if (data.standaloneCollapsed !== undefined) {
+        state.standaloneCollapsed = data.standaloneCollapsed;
+        await Storage.set('standaloneCollapsed', state.standaloneCollapsed);
       }
 
       // 导入当前分区
