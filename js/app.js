@@ -35,7 +35,17 @@
     saveShortcutBtn: $('#saveShortcutBtn'),
     shortcutName: $('#shortcutName'),
     shortcutUrl: $('#shortcutUrl'),
-    shortcutIcon: $('#shortcutIcon'),
+    shortcutIconSource: $('#shortcutIconSource'),
+    shortcutIconUrl: $('#shortcutIconUrl'),
+    shortcutIconFile: $('#shortcutIconFile'),
+    shortcutIconBase64: $('#shortcutIconBase64'),
+    shortcutIconPreview: $('#shortcutIconPreview'),
+    shortcutIconPreviewImg: $('#shortcutIconPreviewImg'),
+    shortcutIconPreviewPlaceholder: $('#shortcutIconPreviewPlaceholder'),
+    iconFileName: $('#iconFileName'),
+    refreshIconBtn: $('#refreshIconBtn'),
+    resetIconBtn: $('#resetIconBtn'),
+    shortcutPartition: $('#shortcutPartition'),
     shortcutFolder: $('#shortcutFolder'),
     modalTitle: $('#modalTitle'),
     // 文件夹弹窗
@@ -44,6 +54,7 @@
     cancelFolderBtn: $('#cancelFolderBtn'),
     saveFolderBtn: $('#saveFolderBtn'),
     folderName: $('#folderName'),
+    folderPartition: $('#folderPartition'),
     folderModalTitle: $('#folderModalTitle'),
     // 隐私模式触发
     weekday: $('#weekday'),
@@ -96,6 +107,7 @@
     importPreview: $('#importPreview'),
     exportDataBtn: $('#exportDataBtn'),
     importDataInput: $('#importDataInput'),
+    refetchAllIconsBtn: $('#refetchAllIconsBtn'),
     // 备份预览弹窗
     backupPreviewModal: $('#backupPreviewModal'),
     backupInfo: $('#backupInfo'),
@@ -237,6 +249,7 @@
     currentEngine: 1,
     settings: {},
     editingShortcutId: null,
+    editingShortcutIconSource: 'auto', // 当前选择的图标源类型
     editingFolderId: null,
     editingEngineId: null,
     editingPartitionId: null,
@@ -279,7 +292,34 @@
   };
 
   // 加载图片并压缩为 base64（最大 64x64，质量 0.8）
-  async function loadAndCompressIcon(iconUrl, maxSize = 64) {
+  // 如果 iconUrl 为 null 且提供了 pageUrl，则自动获取 favicon
+  async function loadAndCompressIcon(iconUrl, pageUrlOrMaxSize = 64, maxSize = 64) {
+    // 参数处理：支持两种调用方式
+    // loadAndCompressIcon(iconUrl, maxSize) - 旧方式
+    // loadAndCompressIcon(null, pageUrl, maxSize) - 自动获取
+    let targetUrl = iconUrl;
+    let actualMaxSize = maxSize;
+    
+    if (typeof pageUrlOrMaxSize === 'number') {
+      actualMaxSize = pageUrlOrMaxSize;
+    } else if (iconUrl === null && typeof pageUrlOrMaxSize === 'string') {
+      // 自动获取模式
+      const faviconUrls = getAllFaviconUrls(pageUrlOrMaxSize);
+      for (const url of faviconUrls) {
+        try {
+          return await loadAndCompressIconFromUrl(url, actualMaxSize);
+        } catch (e) {
+          console.warn('Favicon 加载失败，尝试下一个:', url);
+        }
+      }
+      throw new Error('所有 favicon 服务都失败了');
+    }
+    
+    return loadAndCompressIconFromUrl(targetUrl, actualMaxSize);
+  }
+  
+  // 从指定 URL 加载并压缩图标
+  function loadAndCompressIconFromUrl(iconUrl, maxSize = 64) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous'; // 允许跨域
@@ -787,10 +827,9 @@
     const visibleFolders = filterFolders(state.folders);
     
     // 获取不在文件夹的独立书签（显示在工作区）
-    // 注意：钉住的书签不在这里显示，它们显示在常用区域
+    // 独立书签即使被钉住，也同时在工作区显示
     const standaloneShortcuts = state.shortcuts.filter(s => {
-      if (s.folderId) return false; // 不在文件夹内的
-      if (s.isPinned) return false; // 钉住的显示在常用区域，不在工作区显示
+      if (s.folderId) return false; // 必须是不在文件夹内的
       // 隐私模式显示隐私书签，普通模式显示普通书签
       if (!!s.isPrivate !== state.privateMode) return false;
       // 分区过滤
@@ -935,6 +974,17 @@
     // 切换钉住状态
     shortcut.isPinned = !shortcut.isPinned;
     
+    if (shortcut.isPinned) {
+      // 新钉住的书签放到最后，设置最大的 pinnedOrder
+      const maxPinnedOrder = state.shortcuts
+        .filter(s => s.isPinned)
+        .reduce((max, s) => Math.max(max, s.pinnedOrder || 0), 0);
+      shortcut.pinnedOrder = maxPinnedOrder + 1;
+    } else {
+      // 取消钉住时清除 pinnedOrder
+      shortcut.pinnedOrder = undefined;
+    }
+    
     await Storage.set('shortcuts', state.shortcuts);
     hideAllContextMenus();
     renderShortcuts();
@@ -962,13 +1012,25 @@
       const previewIcon = document.createElement('div');
       previewIcon.className = 'folder-preview-icon';
       
-      const faviconUrl = getFaviconUrl(shortcut.url);
-      if (shortcut.icon || faviconUrl) {
+      const faviconUrls = getAllFaviconUrls(shortcut.url);
+      if (shortcut.icon || faviconUrls.length > 0) {
         const img = document.createElement('img');
+        let fallbackIndex = 0;
+        
         img.addEventListener('error', () => {
-          img.src = DEFAULT_ICON_SVG;
+          if (shortcut.icon && img.src === shortcut.icon && faviconUrls.length > 0) {
+            img.src = faviconUrls[0];
+            fallbackIndex = 1;
+          } else if (fallbackIndex < faviconUrls.length) {
+            img.src = faviconUrls[fallbackIndex];
+            fallbackIndex++;
+          } else {
+            img.src = DEFAULT_ICON_SVG;
+          }
         });
-        img.src = shortcut.icon || faviconUrl;
+        
+        img.src = shortcut.icon || faviconUrls[0];
+        if (!shortcut.icon) fallbackIndex = 1;
         previewIcon.appendChild(img);
       } else {
         previewIcon.textContent = shortcut.name.charAt(0).toUpperCase();
@@ -1410,14 +1472,28 @@
     icon.appendChild(textFallback);
 
     // 尝试获取网站图标
-    const faviconUrl = getFaviconUrl(shortcut.url);
-    if (shortcut.icon || faviconUrl) {
+    const faviconUrls = getAllFaviconUrls(shortcut.url);
+    if (shortcut.icon || faviconUrls.length > 0) {
       const img = document.createElement('img');
+      let fallbackIndex = 0;
+      
       img.addEventListener('error', () => {
-        // favicon 加载失败时使用默认图标
-        img.src = DEFAULT_ICON_SVG;
+        // 如果有自定义图标失败，尝试 favicon 服务
+        if (shortcut.icon && img.src === shortcut.icon && faviconUrls.length > 0) {
+          img.src = faviconUrls[0];
+          fallbackIndex = 1;
+        } else if (fallbackIndex < faviconUrls.length) {
+          // 尝试下一个备用服务
+          img.src = faviconUrls[fallbackIndex];
+          fallbackIndex++;
+        } else {
+          // 所有服务都失败，使用默认图标
+          img.src = DEFAULT_ICON_SVG;
+        }
       });
-      img.src = shortcut.icon || faviconUrl;
+      
+      img.src = shortcut.icon || faviconUrls[0];
+      if (!shortcut.icon) fallbackIndex = 1;
       icon.appendChild(img);
     } else {
       textFallback.style.display = 'flex';
@@ -1616,13 +1692,39 @@
     }
   }
 
-  // 获取网站图标URL（直接使用网站的favicon）
+  // Favicon 服务列表（按优先级排序）
+  const FAVICON_SERVICES = [
+    // DuckDuckGo - 全球可用
+    (domain) => `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+    // 直接访问网站的 favicon
+    (domain, protocol) => `${protocol}//${domain}/favicon.ico`,
+    // Favicon.im 服务
+    (domain) => `https://favicon.im/${domain}`,
+    // Google 服务（部分地区可能不可用）
+    (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+  ];
+
+  // 获取网站图标URL（返回主要服务的URL）
   function getFaviconUrl(url) {
     try {
       const urlObj = new URL(url);
-      return `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
+      const domain = urlObj.hostname;
+      // 默认使用 DuckDuckGo 服务
+      return FAVICON_SERVICES[0](domain);
     } catch {
       return '';
+    }
+  }
+  
+  // 获取所有备用图标URL
+  function getAllFaviconUrls(url) {
+    try {
+      const urlObj = new URL(url);
+      const domain = urlObj.hostname;
+      const protocol = urlObj.protocol;
+      return FAVICON_SERVICES.map(service => service(domain, protocol));
+    } catch {
+      return [];
     }
   }
 
@@ -1864,11 +1966,12 @@
     results.forEach((s, index) => {
       const folder = s.folderId ? state.folders.find(f => f.id === s.folderId) : null;
       const folderName = folder ? folder.name : '';
+      const iconSrc = s.icon || getFaviconUrl(s.url);
       html += `
         <div class="bookmark-search-item ${index === state.searchBookmarkIndex ? 'active' : ''}" 
              data-index="${index}" data-url="${escapeHtml(s.url)}">
           <div class="bookmark-icon">
-            <img src="${getFaviconUrl(s.url)}" onerror="this.src='${DEFAULT_ICON_SVG}'">
+            <img src="${iconSrc}" onerror="this.src='${DEFAULT_ICON_SVG}'">
           </div>
           <div class="bookmark-info">
             <div class="bookmark-name">${escapeHtml(s.name)}</div>
@@ -1956,15 +2059,36 @@
     }
   }
 
+  // 更新工作区选择下拉框
+  function updatePartitionSelect(selectedPartitionId = null) {
+    elements.shortcutPartition.innerHTML = '';
+    // 根据当前模式过滤工作区：隐私模式只显示隐私工作区，普通模式只显示普通工作区
+    const filteredPartitions = state.partitions.filter(p => !!p.isPrivate === state.privateMode);
+    filteredPartitions.forEach(partition => {
+      const option = document.createElement('option');
+      option.value = partition.id;
+      option.textContent = partition.name;
+      if (selectedPartitionId === partition.id) {
+        option.selected = true;
+      }
+      elements.shortcutPartition.appendChild(option);
+    });
+    
+    // 当工作区选择变化时，更新文件夹列表
+    elements.shortcutPartition.onchange = () => {
+      const partitionId = parseInt(elements.shortcutPartition.value);
+      updateFolderSelect(null, partitionId);
+    };
+  }
+
   // 更新文件夹选择下拉框
-  function updateFolderSelect(selectedFolderId = null) {
-    elements.shortcutFolder.innerHTML = '<option value="">无（根目录）</option>';
-    // 根据当前模式过滤文件夹：隐私模式只显示隐私文件夹，普通模式只显示普通文件夹
-    // 同时根据当前分区过滤
-    const currentPartitionId = getCurrentPartitionId();
+  function updateFolderSelect(selectedFolderId = null, partitionId = null) {
+    elements.shortcutFolder.innerHTML = '<option value="">无（独立书签）</option>';
+    // 使用传入的工作区ID，或者从选择器获取
+    const targetPartitionId = partitionId || parseInt(elements.shortcutPartition.value) || getCurrentPartitionId();
     const filteredFolders = state.folders.filter(f => 
       !!f.isPrivate === state.privateMode && 
-      f.partitionId === currentPartitionId
+      f.partitionId === targetPartitionId
     );
     filteredFolders.forEach(folder => {
       const option = document.createElement('option');
@@ -2062,23 +2186,56 @@
   // 打开快捷方式弹窗
   function openShortcutModal(id = null) {
     state.editingShortcutId = id;
-    updateFolderSelect();
-
+    state.editingShortcutIconSource = 'auto';
+    
+    // 重置所有图标相关输入
+    elements.shortcutIconUrl.value = '';
+    elements.shortcutIconFile.value = '';
+    elements.shortcutIconBase64.value = '';
+    if (elements.iconFileName) {
+      elements.iconFileName.textContent = '未选择文件';
+    }
+    updateIconPreview(null);
+    
     if (id) {
       const shortcut = state.shortcuts.find(s => s.id === id);
       if (shortcut) {
-        elements.modalTitle.textContent = '编辑快捷方式';
+        elements.modalTitle.textContent = '编辑书签';
         elements.shortcutName.value = shortcut.name;
         elements.shortcutUrl.value = shortcut.url;
-        // 显示图标地址（如果是 data:image 格式则显示为空，提示用户可以重新设置）
-        elements.shortcutIcon.value = shortcut.icon && !shortcut.icon.startsWith('data:') ? shortcut.icon : '';
-        updateFolderSelect(shortcut.folderId);
+        
+        // 检测当前图标的来源类型
+        // 注意：自动获取的图标也会被压缩成 base64，但 iconUrl 为空
+        // 只有用户手动输入 base64 时才应该显示在 base64 输入框
+        if (shortcut.iconUrl) {
+          // 有保存的图标URL（用户使用了自定义URL或特定服务）
+          elements.shortcutIconUrl.value = shortcut.iconUrl;
+          state.editingShortcutIconSource = 'url';
+          updateIconPreview(shortcut.icon || shortcut.iconUrl);
+        } else if (shortcut.icon) {
+          // 没有 iconUrl，只有 icon（自动获取的图标）
+          // 不需要改变图标源类型，保持 auto
+          state.editingShortcutIconSource = 'auto';
+          updateIconPreview(shortcut.icon);
+        }
+        
+        elements.shortcutIconSource.value = state.editingShortcutIconSource;
+        handleIconSourceChange();
+        
+        // 设置工作区选择器
+        updatePartitionSelect(shortcut.partitionId || getCurrentPartitionId());
+        // 设置文件夹选择器
+        updateFolderSelect(shortcut.folderId, shortcut.partitionId);
       }
     } else {
-      elements.modalTitle.textContent = '添加快捷方式';
+      elements.modalTitle.textContent = '添加书签';
       elements.shortcutName.value = '';
       elements.shortcutUrl.value = '';
-      elements.shortcutIcon.value = '';
+      elements.shortcutIconSource.value = 'auto';
+      handleIconSourceChange();
+      // 默认选择当前工作区
+      updatePartitionSelect(getCurrentPartitionId());
+      updateFolderSelect(null, getCurrentPartitionId());
     }
     elements.shortcutModal.classList.add('show');
   }
@@ -2087,13 +2244,195 @@
   function closeShortcutModal() {
     elements.shortcutModal.classList.remove('show');
     state.editingShortcutId = null;
+    state.editingShortcutIconSource = 'auto';
+  }
+
+  // 更新图标预览
+  function updateIconPreview(iconSrc) {
+    if (iconSrc && iconSrc !== '') {
+      elements.shortcutIconPreviewImg.src = iconSrc;
+      elements.shortcutIconPreviewImg.style.display = 'block';
+      elements.shortcutIconPreviewPlaceholder.style.display = 'none';
+    } else {
+      elements.shortcutIconPreviewImg.src = '';
+      elements.shortcutIconPreviewImg.style.display = 'none';
+      elements.shortcutIconPreviewPlaceholder.style.display = 'flex';
+    }
+  }
+
+  // 处理图标源切换
+  function handleIconSourceChange(isUserAction = false) {
+    const source = elements.shortcutIconSource.value;
+    state.editingShortcutIconSource = source;
+    
+    // 隐藏所有输入区域
+    document.querySelectorAll('.icon-input-area').forEach(el => {
+      el.style.display = 'none';
+    });
+    
+    // 如果是用户主动切换，清空预览和相关输入
+    if (isUserAction) {
+      updateIconPreview(null);
+      elements.shortcutIconUrl.value = '';
+      elements.shortcutIconFile.value = '';
+      elements.shortcutIconBase64.value = '';
+      if (elements.iconFileName) {
+        elements.iconFileName.textContent = '未选择文件';
+      }
+    }
+    
+    // 显示对应的输入区域
+    switch (source) {
+      case 'auto':
+      case 'duckduckgo':
+      case 'google':
+      case 'iowen':
+      case 'cccyun':
+      case '7ed':
+        // 这些不需要额外输入，只需点击刷新
+        break;
+      case 'local':
+        document.querySelector('.icon-input-area.file-area').style.display = 'block';
+        break;
+      case 'url':
+        document.querySelector('.icon-input-area.url-area').style.display = 'block';
+        break;
+      case 'base64':
+        document.querySelector('.icon-input-area.base64-area').style.display = 'block';
+        break;
+    }
+  }
+
+  // 处理本地文件选择
+  function handleIconFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+      showAlert('请选择图片文件', 'error');
+      return;
+    }
+    
+    // 显示文件名
+    if (elements.iconFileName) {
+      elements.iconFileName.textContent = file.name;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        // 压缩图标
+        const compressed = await loadAndCompressIconFromUrl(event.target.result);
+        updateIconPreview(compressed);
+      } catch (e) {
+        // 如果压缩失败，直接使用原图
+        updateIconPreview(event.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // 处理图标URL输入
+  async function handleIconUrlInput() {
+    const url = elements.shortcutIconUrl.value.trim();
+    if (!url) {
+      updateIconPreview(null);
+      return;
+    }
+    
+    try {
+      const iconData = await loadAndCompressIcon(url);
+      updateIconPreview(iconData);
+    } catch (e) {
+      console.warn('图标加载失败:', e);
+      updateIconPreview(url); // 尝试直接显示URL
+    }
+  }
+
+  // 处理Base64输入
+  function handleIconBase64Input() {
+    const base64 = elements.shortcutIconBase64.value.trim();
+    if (base64) {
+      updateIconPreview(base64);
+    } else {
+      updateIconPreview(null);
+    }
+  }
+
+  // 处理刷新图标
+  async function handleRefreshIcon() {
+    const url = elements.shortcutUrl.value.trim();
+    if (!url) {
+      showAlert('请先输入网址', 'error');
+      return;
+    }
+    
+    let targetUrl = url;
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    
+    const source = elements.shortcutIconSource.value;
+    let iconUrl = null;
+    
+    try {
+      switch (source) {
+        case 'auto':
+          // 自动获取，使用默认服务
+          const iconData = await loadAndCompressIcon(null, targetUrl);
+          updateIconPreview(iconData);
+          return;
+        case 'duckduckgo':
+          iconUrl = `https://icons.duckduckgo.com/ip3/${new URL(targetUrl).hostname}.ico`;
+          break;
+        case 'google':
+          iconUrl = `https://www.google.com/s2/favicons?domain=${new URL(targetUrl).hostname}&sz=128`;
+          break;
+        case 'iowen':
+          iconUrl = `https://api.iowen.cn/favicon/${new URL(targetUrl).hostname}.png`;
+          break;
+        case 'cccyun':
+          iconUrl = `https://favicon.cccyun.cc/${new URL(targetUrl).hostname}`;
+          break;
+        case '7ed':
+          iconUrl = `https://api.7ed.net/favicon/api?url=${encodeURIComponent(targetUrl)}`;
+          break;
+        case 'url':
+          iconUrl = elements.shortcutIconUrl.value.trim();
+          break;
+        default:
+          showAlert('此图标源不支持自动获取', 'warning');
+          return;
+      }
+      
+      if (iconUrl) {
+        const iconData = await loadAndCompressIcon(iconUrl);
+        updateIconPreview(iconData);
+      }
+    } catch (e) {
+      console.warn('图标获取失败:', e);
+      showAlert('图标获取失败', 'error');
+    }
+  }
+
+  // 处理重置图标
+  function handleResetIcon() {
+    elements.shortcutIconSource.value = 'auto';
+    elements.shortcutIconUrl.value = '';
+    elements.shortcutIconFile.value = '';
+    elements.shortcutIconBase64.value = '';
+    if (elements.iconFileName) {
+      elements.iconFileName.textContent = '未选择文件';
+    }
+    updateIconPreview(null);
+    handleIconSourceChange();
   }
 
   // 保存快捷方式
   async function saveShortcut() {
     const name = elements.shortcutName.value.trim();
     let url = elements.shortcutUrl.value.trim();
-    let iconUrl = elements.shortcutIcon.value.trim();
+    const partitionId = elements.shortcutPartition.value ? parseInt(elements.shortcutPartition.value) : getCurrentPartitionId();
     const folderId = elements.shortcutFolder.value ? parseInt(elements.shortcutFolder.value) : null;
 
     if (!name || !url) {
@@ -2106,18 +2445,73 @@
       url = 'https://' + url;
     }
 
-    // 处理图标
-    let iconData = '';
-    if (iconUrl) {
-      // 用户填写了图标地址，尝试加载并压缩
-      try {
-        iconData = await loadAndCompressIcon(iconUrl);
-      } catch (e) {
-        console.warn('图标加载失败，将使用默认图标:', e.message);
-        // 加载失败时保留原始 URL，让渲染时使用 favicon 服务
-        iconData = '';
+    // 根据图标源类型处理图标
+    const iconSource = elements.shortcutIconSource.value;
+    let iconData = null;
+    let iconUrlToSave = null;
+
+    try {
+      switch (iconSource) {
+        case 'auto':
+          // 自动获取，使用默认服务
+          iconData = await loadAndCompressIcon(null, url);
+          iconUrlToSave = null;
+          break;
+        case 'duckduckgo':
+          const ddgUrl = `https://icons.duckduckgo.com/ip3/${new URL(url).hostname}.ico`;
+          iconData = await loadAndCompressIcon(ddgUrl);
+          iconUrlToSave = ddgUrl;
+          break;
+        case 'google':
+          const googleUrl = `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`;
+          iconData = await loadAndCompressIcon(googleUrl);
+          iconUrlToSave = googleUrl;
+          break;
+        case 'iowen':
+          const iowenUrl = `https://api.iowen.cn/favicon/${new URL(url).hostname}.png`;
+          iconData = await loadAndCompressIcon(iowenUrl);
+          iconUrlToSave = iowenUrl;
+          break;
+        case 'cccyun':
+          const cccyunUrl = `https://favicon.cccyun.cc/${new URL(url).hostname}`;
+          iconData = await loadAndCompressIcon(cccyunUrl);
+          iconUrlToSave = cccyunUrl;
+          break;
+        case '7ed':
+          const edUrl = `https://api.7ed.net/favicon/api?url=${encodeURIComponent(url)}`;
+          iconData = await loadAndCompressIcon(edUrl);
+          iconUrlToSave = edUrl;
+          break;
+        case 'local':
+          // 本地文件已通过预览转换为 base64
+          iconData = elements.shortcutIconPreviewImg.src;
+          if (!iconData || iconData === '' || iconData.includes('default-favicon')) {
+            iconData = '';
+          }
+          iconUrlToSave = null;
+          break;
+        case 'url':
+          const customUrl = elements.shortcutIconUrl.value.trim();
+          if (customUrl) {
+            iconData = await loadAndCompressIcon(customUrl);
+            iconUrlToSave = customUrl;
+          }
+          break;
+        case 'base64':
+          iconData = elements.shortcutIconBase64.value.trim();
+          iconUrlToSave = null;
+          break;
       }
+    } catch (e) {
+      console.warn('图标加载失败:', e.message);
+      // 图标加载失败时，设置为空（这样会清除旧的 base64 图标）
+      iconData = '';
+      iconUrlToSave = '';
     }
+
+    // 确保 iconData 和 iconUrlToSave 有值（即使是空字符串）
+    if (iconData === null) iconData = '';
+    if (iconUrlToSave === null) iconUrlToSave = '';
 
     if (state.editingShortcutId) {
       // 编辑
@@ -2126,11 +2520,9 @@
         state.shortcuts[index].name = name;
         state.shortcuts[index].url = url;
         state.shortcuts[index].folderId = folderId;
-        // 如果有新图标则更新，否则保留原图标
-        if (iconUrl) {
-          state.shortcuts[index].icon = iconData;
-        }
-        // 编辑时保持原有的隐私属性和分区
+        state.shortcuts[index].partitionId = partitionId;
+        state.shortcuts[index].icon = iconData || '';
+        state.shortcuts[index].iconUrl = iconUrlToSave || '';
       }
     } else {
       // 添加
@@ -2139,16 +2531,29 @@
         id: maxId + 1,
         name,
         url,
-        icon: iconData,
+        icon: iconData || '', // 新建时如果没有图标则为空
+        iconUrl: iconUrlToSave || '', // 保存原始 URL
         folderId,
-        partitionId: getCurrentPartitionId(), // 添加到当前分区
+        partitionId: partitionId, // 使用选择的工作区
         isPrivate: state.privateMode // 根据当前模式决定是否为隐私书签
       });
     }
 
     await Storage.set('shortcuts', state.shortcuts);
     renderShortcuts();
+    
+    // 保存当前打开的文件夹ID（因为closeShortcutModal可能在某些情况下影响状态）
+    const currentOpenFolderId = state.openFolderId;
+    
     closeShortcutModal();
+    
+    // 如果文件夹弹窗打开，刷新弹窗内容
+    if (currentOpenFolderId) {
+      // 延迟刷新确保DOM已更新
+      setTimeout(() => {
+        openFolderPopup(currentOpenFolderId);
+      }, 50);
+    }
   }
 
   // 删除书签
@@ -2171,17 +2576,30 @@
   function openFolderModal(id = null) {
     state.editingFolderId = id;
 
+    // 更新工作区选择器
+    updateFolderPartitionSelect(getCurrentPartitionId());
+
     if (id) {
       const folder = state.folders.find(f => f.id === id);
       if (folder) {
         elements.folderModalTitle.textContent = '编辑文件夹';
         elements.folderName.value = folder.name;
+        // 设置当前工作区
+        updateFolderPartitionSelect(folder.partitionId || getCurrentPartitionId());
       }
     } else {
       elements.folderModalTitle.textContent = state.privateMode ? '添加隐私文件夹' : '添加文件夹';
       elements.folderName.value = '';
     }
     elements.folderModal.classList.add('show');
+  }
+
+  // 更新文件夹的工作区选择器
+  function updateFolderPartitionSelect(selectedPartitionId) {
+    const partitions = state.partitions.filter(p => !!p.isPrivate === state.privateMode);
+    elements.folderPartition.innerHTML = partitions.map(p => 
+      `<option value="${p.id}" ${p.id === selectedPartitionId ? 'selected' : ''}>${p.name}</option>`
+    ).join('');
   }
 
   // 关闭文件夹弹窗
@@ -2193,52 +2611,64 @@
   // 保存文件夹
   async function saveFolder() {
     const name = elements.folderName.value.trim();
+    const selectedPartitionId = elements.folderPartition.value ? parseInt(elements.folderPartition.value) : getCurrentPartitionId();
 
     if (!name) {
       showAlert('请填写文件夹名称', 'error');
       return;
     }
 
-    const currentPartitionId = getCurrentPartitionId();
     const nameLower = name.toLowerCase();
 
     if (state.editingFolderId) {
-      // 编辑 - 检查同名文件夹（排除自己，不区分大小写）
+      // 编辑 - 检查目标工作区是否已存在同名文件夹（排除自己，不区分大小写）
       const existingFolder = state.folders.find(f => 
         f.id !== state.editingFolderId &&
         f.name.toLowerCase() === nameLower && 
-        f.partitionId === currentPartitionId &&
+        f.partitionId === selectedPartitionId &&
         !!f.isPrivate === state.privateMode
       );
       if (existingFolder) {
-        showAlert('当前工作区已存在同名文件夹', 'error');
+        showAlert('目标工作区已存在同名文件夹', 'error');
         return;
       }
       
       const index = state.folders.findIndex(f => f.id === state.editingFolderId);
       if (index !== -1) {
+        const oldPartitionId = state.folders[index].partitionId;
         state.folders[index].name = name;
+        state.folders[index].partitionId = selectedPartitionId;
+        
+        // 如果工作区发生变化，同时移动文件夹内的所有书签
+        if (oldPartitionId !== selectedPartitionId) {
+          state.shortcuts.forEach(s => {
+            if (s.folderId === state.editingFolderId) {
+              s.partitionId = selectedPartitionId;
+            }
+          });
+          await Storage.set('shortcuts', state.shortcuts);
+        }
       }
     } else {
-      // 添加 - 检查当前工作区是否已存在同名文件夹（不区分大小写）
+      // 添加 - 检查目标工作区是否已存在同名文件夹（不区分大小写）
       const existingFolder = state.folders.find(f => 
         f.name.toLowerCase() === nameLower && 
-        f.partitionId === currentPartitionId &&
+        f.partitionId === selectedPartitionId &&
         !!f.isPrivate === state.privateMode
       );
       if (existingFolder) {
-        showAlert('当前工作区已存在同名文件夹', 'error');
+        showAlert('目标工作区已存在同名文件夹', 'error');
         return;
       }
       
-      // 根据当前模式自动设置隐私属性，并关联当前分区
+      // 根据当前模式自动设置隐私属性，并关联选择的分区
       const maxId = state.folders.reduce((max, f) => Math.max(max, f.id), 0);
       state.folders.push({
         id: maxId + 1,
         name,
         collapsed: false,
-        partitionId: currentPartitionId, // 添加到当前分区
-        isPrivate: state.privateMode // 普通模式创建普通文件夹，隐私模式创建隐私文件夹
+        partitionId: selectedPartitionId,
+        isPrivate: state.privateMode
       });
     }
 
@@ -2506,6 +2936,54 @@
     }, 3000);
   }
 
+  // 重新获取所有书签图标
+  async function refetchAllIcons() {
+    const confirmed = await showConfirm('确定要重新获取所有书签的图标吗？\n这可能需要一些时间，具体取决于书签数量。');
+    if (!confirmed) return;
+
+    const totalCount = state.shortcuts.length;
+    if (totalCount === 0) {
+      showAlert('没有书签需要处理', 'warning');
+      return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // 显示进度提示
+    showAlert(`开始获取图标，共 ${totalCount} 个书签...`, 'info');
+
+    for (let i = 0; i < state.shortcuts.length; i++) {
+      const shortcut = state.shortcuts[i];
+      
+      try {
+        // 自动获取图标
+        const iconData = await loadAndCompressIcon(null, shortcut.url);
+        if (iconData && iconData.startsWith('data:')) {
+          state.shortcuts[i].icon = iconData;
+          state.shortcuts[i].iconUrl = ''; // 清除旧的 iconUrl
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (e) {
+        console.warn(`获取图标失败: ${shortcut.name}`, e);
+        failCount++;
+      }
+
+      // 每处理10个保存一次，避免数据丢失
+      if ((i + 1) % 10 === 0) {
+        await Storage.set('shortcuts', state.shortcuts);
+      }
+    }
+
+    // 最终保存
+    await Storage.set('shortcuts', state.shortcuts);
+    renderShortcuts();
+
+    showAlert(`图标获取完成！成功: ${successCount}，失败: ${failCount}`, successCount > 0 ? 'success' : 'warning');
+  }
+
   // 导出所有设置
   async function exportAllData() {
     // 重新从 Storage 加载最新数据，确保多标签页场景下数据是最新的
@@ -2736,7 +3214,7 @@
             <div class="backup-tree-items">
               ${rootShortcuts.slice(0, 5).map(s => `
                 <div class="backup-tree-item">
-                  <img src="${getFaviconUrl(s.url)}" class="backup-favicon">
+                  <img src="${s.icon || getFaviconUrl(s.url)}" class="backup-favicon">
                   <span class="item-name">${s.name}</span>
                 </div>
               `).join('')}
@@ -3194,6 +3672,14 @@
     elements.closeModalBtn.addEventListener('click', closeShortcutModal);
     elements.cancelShortcutBtn.addEventListener('click', closeShortcutModal);
     elements.saveShortcutBtn.addEventListener('click', saveShortcut);
+    
+    // 图标源选择器
+    elements.shortcutIconSource.addEventListener('change', () => handleIconSourceChange(true));
+    elements.shortcutIconFile.addEventListener('change', handleIconFileSelect);
+    elements.shortcutIconUrl.addEventListener('blur', handleIconUrlInput);
+    elements.shortcutIconBase64.addEventListener('blur', handleIconBase64Input);
+    elements.refreshIconBtn.addEventListener('click', handleRefreshIcon);
+    elements.resetIconBtn.addEventListener('click', handleResetIcon);
 
     // 多选模式
     elements.multiSelectBtn.addEventListener('click', enterMultiSelectMode);
@@ -3417,6 +3903,9 @@
 
     // 备份导出
     elements.exportDataBtn.addEventListener('click', exportAllData);
+
+    // 重新获取所有图标
+    elements.refetchAllIconsBtn.addEventListener('click', refetchAllIcons);
 
     // 备份导入 - 显示预览
     elements.importDataInput.addEventListener('change', (e) => {
