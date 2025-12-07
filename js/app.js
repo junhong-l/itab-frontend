@@ -189,9 +189,16 @@
     syncDisconnectBtn: $('#syncDisconnectBtn'),
     syncUploadBtn: $('#syncUploadBtn'),
     syncDownloadBtn: $('#syncDownloadBtn'),
+    syncSmartRestoreBtn: $('#syncSmartRestoreBtn'),
     syncInfo: $('#syncInfo'),
     syncBackupItems: $('#syncBackupItems'),
     syncRefreshBtn: $('#syncRefreshBtn'),
+    // 智能恢复弹窗
+    smartRestoreModal: $('#smartRestoreModal'),
+    closeSmartRestoreBtn: $('#closeSmartRestoreBtn'),
+    smartRestoreSections: $('#smartRestoreSections'),
+    cancelSmartRestoreBtn: $('#cancelSmartRestoreBtn'),
+    confirmSmartRestoreBtn: $('#confirmSmartRestoreBtn'),
     // 密码管理
     passwordManagerBtn: $('#passwordManagerBtn'),
     passwordManagerModal: $('#passwordManagerModal'),
@@ -4512,7 +4519,19 @@
     elements.syncDisconnectBtn.addEventListener('click', disconnectSync);
     elements.syncUploadBtn.addEventListener('click', uploadData);
     elements.syncDownloadBtn.addEventListener('click', downloadData);
+    elements.syncSmartRestoreBtn.addEventListener('click', smartRestore);
     elements.syncRefreshBtn.addEventListener('click', loadBackupList);
+
+    // 智能恢复弹窗事件
+    if (elements.closeSmartRestoreBtn) {
+      elements.closeSmartRestoreBtn.addEventListener('click', closeSmartRestoreModal);
+    }
+    if (elements.cancelSmartRestoreBtn) {
+      elements.cancelSmartRestoreBtn.addEventListener('click', closeSmartRestoreModal);
+    }
+    if (elements.confirmSmartRestoreBtn) {
+      elements.confirmSmartRestoreBtn.addEventListener('click', confirmSmartRestore);
+    }
 
     // 加密密钥弹窗事件
     elements.closeEncryptKeyBtn.addEventListener('click', () => {
@@ -5305,6 +5324,7 @@
       state.syncBackups = result.data || [];
       state.selectedBackupId = null;
       elements.syncDownloadBtn.disabled = true;
+      elements.syncSmartRestoreBtn.disabled = true;
       renderBackupList();
     } catch (e) {
       console.error('加载备份列表失败:', e);
@@ -5346,6 +5366,7 @@
   function selectBackup(id) {
     state.selectedBackupId = state.selectedBackupId === id ? null : id;
     elements.syncDownloadBtn.disabled = !state.selectedBackupId;
+    elements.syncSmartRestoreBtn.disabled = !state.selectedBackupId;
     renderBackupList();
   }
 
@@ -5585,6 +5606,7 @@
     }
 
     elements.syncDownloadBtn.disabled = true;
+    elements.syncSmartRestoreBtn.disabled = true;
     showSyncInfo('正在下载...');
 
     try {
@@ -5734,6 +5756,750 @@
       showSyncInfo(`❌ 下载失败: ${e.message}`);
     } finally {
       elements.syncDownloadBtn.disabled = !state.selectedBackupId;
+      elements.syncSmartRestoreBtn.disabled = !state.selectedBackupId;
+    }
+  }
+
+  // ========== 智能恢复功能 ==========
+  
+  // 临时存储智能恢复的差异数据
+  let smartRestoreDiff = null;
+
+  // 智能恢复 - 对比本地和云端数据
+  async function smartRestore() {
+    if (!state.syncConnected || !state.syncConfig) {
+      showAlert('请先连接同步服务', 'error');
+      return;
+    }
+
+    if (!state.selectedBackupId) {
+      showAlert('请先选择要对比的备份', 'error');
+      return;
+    }
+
+    elements.syncDownloadBtn.disabled = true;
+    elements.syncSmartRestoreBtn.disabled = true;
+    showSyncInfo('正在下载并对比数据...');
+
+    try {
+      // 下载云端数据
+      const downloadUrl = `${state.syncConfig.apiDownload}/${state.selectedBackupId}`;
+      const response = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: {
+          'x-access-key': state.syncConfig.accessKey,
+          'x-secret-key': state.syncConfig.secretKey
+        }
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `下载失败: ${response.status}`);
+      }
+
+      const responseData = await response.json();
+      const cloudData = responseData.data || responseData;
+      const passwordsEncrypted = responseData.passwordsEncrypted || false;
+
+      // 获取本地密码
+      const localPasswords = await PasswordManager.getAll();
+      
+      // 处理云端密码数据
+      let cloudPasswords = [];
+      let decryptedCloudPasswords = null;
+      
+      if (cloudData.passwords && cloudData.passwords.length > 0 && passwordsEncrypted) {
+        // 云端有加密密码，需要解密后对比
+        try {
+          const decryptKey = await showEncryptKeyModal('download');
+          if (!decryptKey) {
+            showSyncInfo('已取消智能恢复');
+            return;
+          }
+          decryptedCloudPasswords = await decryptPasswords(cloudData.passwords, decryptKey);
+          if (decryptedCloudPasswords === null) {
+            showAlert('解密失败，请检查密钥是否正确', 'error');
+            return;
+          }
+          cloudPasswords = decryptedCloudPasswords;
+        } catch (e) {
+          if (e === 'cancelled') {
+            return;
+          }
+          showAlert('解密失败: ' + e.message, 'error');
+          return;
+        }
+      } else if (cloudData.passwords && cloudData.passwords.length > 0) {
+        // 云端有未加密的密码
+        cloudPasswords = cloudData.passwords;
+      }
+
+      // 对比数据（包含密码）
+      const diff = compareData(cloudData, localPasswords, cloudPasswords);
+      
+      if (diff.totalChanges === 0) {
+        showSyncInfo('✅ 本地数据与云端完全一致，无需恢复');
+        return;
+      }
+
+      // 存储差异数据和云端原始数据
+      smartRestoreDiff = {
+        diff,
+        cloudData,
+        passwordsEncrypted,
+        cloudPasswords  // 存储解密后的密码用于恢复
+      };
+
+      // 显示智能恢复弹窗
+      showSmartRestoreModal(diff);
+      
+    } catch (e) {
+      console.error('智能恢复失败:', e);
+      showSyncInfo(`❌ 对比失败: ${e.message}`);
+    } finally {
+      elements.syncDownloadBtn.disabled = !state.selectedBackupId;
+      elements.syncSmartRestoreBtn.disabled = !state.selectedBackupId;
+    }
+  }
+
+  // 对比本地和云端数据
+  function compareData(cloudData, localPasswords = [], cloudPasswords = []) {
+    const diff = {
+      partitions: { added: [], modified: [], deleted: [] },
+      folders: { added: [], modified: [], deleted: [] },
+      shortcuts: { added: [], modified: [], deleted: [] },
+      searchEngines: { added: [], modified: [], deleted: [] },
+      passwords: { added: [], modified: [], deleted: [] },
+      settings: { changed: false, local: null, cloud: null },
+      totalChanges: 0
+    };
+
+    // 对比分区
+    if (cloudData.partitions && Array.isArray(cloudData.partitions)) {
+      const localMap = new Map(state.partitions.map(p => [p.id, p]));
+      const cloudMap = new Map(cloudData.partitions.map(p => [p.id, p]));
+      
+      cloudData.partitions.forEach(cp => {
+        const local = localMap.get(cp.id);
+        if (!local) {
+          diff.partitions.added.push(cp);
+        } else if (local.name !== cp.name) {
+          diff.partitions.modified.push({ local, cloud: cp });
+        }
+      });
+      
+      state.partitions.forEach(lp => {
+        if (!cloudMap.has(lp.id)) {
+          diff.partitions.deleted.push(lp);
+        }
+      });
+    }
+
+    // 对比文件夹
+    if (cloudData.folders && Array.isArray(cloudData.folders)) {
+      const localMap = new Map(state.folders.map(f => [f.id, f]));
+      const cloudMap = new Map(cloudData.folders.map(f => [f.id, f]));
+      
+      cloudData.folders.forEach(cf => {
+        const local = localMap.get(cf.id);
+        if (!local) {
+          diff.folders.added.push(cf);
+        } else if (local.name !== cf.name || local.partitionId !== cf.partitionId) {
+          diff.folders.modified.push({ local, cloud: cf });
+        }
+      });
+      
+      state.folders.forEach(lf => {
+        if (!cloudMap.has(lf.id)) {
+          diff.folders.deleted.push(lf);
+        }
+      });
+    }
+
+    // 对比书签
+    if (cloudData.shortcuts && Array.isArray(cloudData.shortcuts)) {
+      const localMap = new Map(state.shortcuts.map(s => [s.id, s]));
+      const cloudMap = new Map(cloudData.shortcuts.map(s => [s.id, s]));
+      
+      cloudData.shortcuts.forEach(cs => {
+        const local = localMap.get(cs.id);
+        if (!local) {
+          diff.shortcuts.added.push(cs);
+        } else if (local.name !== cs.name || local.url !== cs.url || local.folderId !== cs.folderId) {
+          diff.shortcuts.modified.push({ local, cloud: cs });
+        }
+      });
+      
+      state.shortcuts.forEach(ls => {
+        if (!cloudMap.has(ls.id)) {
+          diff.shortcuts.deleted.push(ls);
+        }
+      });
+    }
+
+    // 对比搜索引擎
+    if (cloudData.searchEngines && Array.isArray(cloudData.searchEngines)) {
+      const localMap = new Map(state.searchEngines.map(e => [e.id, e]));
+      const cloudMap = new Map(cloudData.searchEngines.map(e => [e.id, e]));
+      
+      cloudData.searchEngines.forEach(ce => {
+        const local = localMap.get(ce.id);
+        if (!local) {
+          diff.searchEngines.added.push(ce);
+        } else if (local.name !== ce.name || local.url !== ce.url) {
+          diff.searchEngines.modified.push({ local, cloud: ce });
+        }
+      });
+      
+      state.searchEngines.forEach(le => {
+        if (!cloudMap.has(le.id)) {
+          diff.searchEngines.deleted.push(le);
+        }
+      });
+    }
+
+    // 对比设置
+    if (cloudData.settings) {
+      const settingsKeys = ['bgType', 'gradientColor1', 'gradientColor2', 'gradientAngle', 'solidColor', 
+                           'iconSize', 'folderSize', 'iconGap', 'folderGap', 'iconRadius', 
+                           'searchRadius', 'btnRadius', 'layoutMode', 'barWidth', 'barHeight', 
+                           'barGap', 'barColumns', 'folderBarHeight'];
+      
+      for (const key of settingsKeys) {
+        if (state.settings[key] !== cloudData.settings[key]) {
+          diff.settings.changed = true;
+          diff.settings.local = state.settings;
+          diff.settings.cloud = cloudData.settings;
+          break;
+        }
+      }
+    }
+
+    // 对比密码
+    if (cloudPasswords.length > 0 || localPasswords.length > 0) {
+      const localMap = new Map(localPasswords.map(p => [p.id, p]));
+      const cloudMap = new Map(cloudPasswords.map(p => [p.id, p]));
+      
+      cloudPasswords.forEach(cp => {
+        const local = localMap.get(cp.id);
+        if (!local) {
+          diff.passwords.added.push(cp);
+        } else if (local.name !== cp.name || local.url !== cp.url || 
+                   local.username !== cp.username || local.password !== cp.password || 
+                   local.notes !== cp.notes) {
+          diff.passwords.modified.push({ local, cloud: cp });
+        }
+      });
+      
+      localPasswords.forEach(lp => {
+        if (!cloudMap.has(lp.id)) {
+          diff.passwords.deleted.push(lp);
+        }
+      });
+    }
+
+    // 计算总变更数
+    diff.totalChanges = 
+      diff.partitions.added.length + diff.partitions.modified.length + diff.partitions.deleted.length +
+      diff.folders.added.length + diff.folders.modified.length + diff.folders.deleted.length +
+      diff.shortcuts.added.length + diff.shortcuts.modified.length + diff.shortcuts.deleted.length +
+      diff.searchEngines.added.length + diff.searchEngines.modified.length + diff.searchEngines.deleted.length +
+      diff.passwords.added.length + diff.passwords.modified.length + diff.passwords.deleted.length +
+      (diff.settings.changed ? 1 : 0);
+
+    return diff;
+  }
+
+  // 显示智能恢复弹窗
+  function showSmartRestoreModal(diff) {
+    let html = '';
+
+    // 书签变更
+    const shortcutChanges = diff.shortcuts.added.length + diff.shortcuts.modified.length + diff.shortcuts.deleted.length;
+    if (shortcutChanges > 0) {
+      html += `
+        <div class="restore-section expanded" data-section="shortcuts">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="shortcuts" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+            </div>
+            <span class="restore-section-title">书签</span>
+            <span class="restore-section-count">${shortcutChanges} 项变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            ${renderRestoreItems('shortcuts', diff.shortcuts)}
+          </div>
+        </div>
+      `;
+    }
+
+    // 文件夹变更
+    const folderChanges = diff.folders.added.length + diff.folders.modified.length + diff.folders.deleted.length;
+    if (folderChanges > 0) {
+      html += `
+        <div class="restore-section" data-section="folders">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="folders" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+            </div>
+            <span class="restore-section-title">文件夹</span>
+            <span class="restore-section-count">${folderChanges} 项变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            ${renderRestoreItems('folders', diff.folders)}
+          </div>
+        </div>
+      `;
+    }
+
+    // 分区变更
+    const partitionChanges = diff.partitions.added.length + diff.partitions.modified.length + diff.partitions.deleted.length;
+    if (partitionChanges > 0) {
+      html += `
+        <div class="restore-section" data-section="partitions">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="partitions" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+            </div>
+            <span class="restore-section-title">工作区</span>
+            <span class="restore-section-count">${partitionChanges} 项变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            ${renderRestoreItems('partitions', diff.partitions)}
+          </div>
+        </div>
+      `;
+    }
+
+    // 搜索引擎变更
+    const engineChanges = diff.searchEngines.added.length + diff.searchEngines.modified.length + diff.searchEngines.deleted.length;
+    if (engineChanges > 0) {
+      html += `
+        <div class="restore-section" data-section="searchEngines">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="searchEngines" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </div>
+            <span class="restore-section-title">搜索引擎</span>
+            <span class="restore-section-count">${engineChanges} 项变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            ${renderRestoreItems('searchEngines', diff.searchEngines)}
+          </div>
+        </div>
+      `;
+    }
+
+    // 设置变更
+    if (diff.settings.changed) {
+      html += `
+        <div class="restore-section" data-section="settings">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="settings" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            </div>
+            <span class="restore-section-title">外观设置</span>
+            <span class="restore-section-count">已变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            <div class="restore-item">
+              <input type="checkbox" class="restore-item-checkbox" data-section="settings" data-type="modified" data-id="all" checked>
+              <div class="restore-item-info">
+                <div class="restore-item-name">恢复云端外观设置</div>
+                <div class="restore-item-detail">包括背景、图标大小、布局模式等</div>
+              </div>
+              <span class="restore-item-badge modified">已修改</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 密码变更
+    const passwordChanges = diff.passwords.added.length + diff.passwords.modified.length + diff.passwords.deleted.length;
+    if (passwordChanges > 0) {
+      html += `
+        <div class="restore-section" data-section="passwords">
+          <div class="restore-section-header">
+            <input type="checkbox" class="restore-section-checkbox" data-section="passwords" checked>
+            <div class="restore-section-icon">
+              <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+            </div>
+            <span class="restore-section-title">密码</span>
+            <span class="restore-section-count">${passwordChanges} 项变更</span>
+            <div class="restore-section-toggle">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="restore-section-content">
+            ${renderRestoreItems('passwords', diff.passwords)}
+          </div>
+        </div>
+      `;
+    }
+
+    if (!html) {
+      html = `
+        <div class="restore-no-changes">
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          <p>本地数据与云端完全一致，无需恢复</p>
+        </div>
+      `;
+    }
+
+    elements.smartRestoreSections.innerHTML = html;
+    elements.smartRestoreModal.classList.add('active');
+
+    // 绑定事件
+    bindSmartRestoreEvents();
+  }
+
+  // 渲染恢复项目
+  function renderRestoreItems(section, changes) {
+    let html = '';
+    
+    // 获取项目显示信息的辅助函数
+    const getItemInfo = (item) => {
+      if (section === 'passwords') {
+        const name = item.name || item.url || '未知';
+        const username = item.username ? `用户名: ${item.username.substring(0, 3)}***` : '';
+        return { name, detail: username };
+      } else if (section === 'shortcuts') {
+        return { name: item.name || item.url || '未知', detail: item.url };
+      } else {
+        return { name: item.name || item.url || '未知', detail: '' };
+      }
+    };
+    
+    // 渲染图标
+    const renderIcon = (item) => {
+      if (section === 'shortcuts') {
+        return `<div class="restore-item-icon"><img src="${item.icon || getFaviconUrl(item.url)}" onerror="this.src='${DEFAULT_ICON_SVG}'"></div>`;
+      } else if (section === 'passwords') {
+        return `<div class="restore-item-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></div>`;
+      }
+      return '';
+    };
+    
+    // 新增项
+    changes.added.forEach(item => {
+      const { name, detail } = getItemInfo(item);
+      html += `
+        <div class="restore-item">
+          <input type="checkbox" class="restore-item-checkbox" data-section="${section}" data-type="added" data-id="${item.id}" checked>
+          ${renderIcon(item)}
+          <div class="restore-item-info">
+            <div class="restore-item-name">${escapeHtml(name)}</div>
+            ${detail ? `<div class="restore-item-detail">${escapeHtml(detail)}</div>` : ''}
+          </div>
+          <span class="restore-item-badge new">新增</span>
+        </div>
+      `;
+    });
+    
+    // 修改项
+    changes.modified.forEach(item => {
+      const cloud = item.cloud;
+      const { name, detail } = getItemInfo(cloud);
+      html += `
+        <div class="restore-item">
+          <input type="checkbox" class="restore-item-checkbox" data-section="${section}" data-type="modified" data-id="${cloud.id}" checked>
+          ${renderIcon(cloud)}
+          <div class="restore-item-info">
+            <div class="restore-item-name">${escapeHtml(name)}</div>
+            ${detail ? `<div class="restore-item-detail">${escapeHtml(detail)}</div>` : ''}
+          </div>
+          <span class="restore-item-badge modified">已修改</span>
+        </div>
+      `;
+    });
+    
+    // 删除项（云端没有但本地有，选择后将从本地删除）
+    changes.deleted.forEach(item => {
+      const { name, detail } = getItemInfo(item);
+      html += `
+        <div class="restore-item">
+          <input type="checkbox" class="restore-item-checkbox" data-section="${section}" data-type="deleted" data-id="${item.id}">
+          ${renderIcon(item)}
+          <div class="restore-item-info">
+            <div class="restore-item-name">${escapeHtml(name)}</div>
+            ${detail ? `<div class="restore-item-detail">${escapeHtml(detail)}</div>` : ''}
+          </div>
+          <span class="restore-item-badge deleted">仅本地</span>
+        </div>
+      `;
+    });
+    
+    return html;
+  }
+
+  // 绑定智能恢复弹窗事件
+  function bindSmartRestoreEvents() {
+    // 区块展开/折叠
+    elements.smartRestoreSections.querySelectorAll('.restore-section-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        if (e.target.type === 'checkbox') return;
+        header.closest('.restore-section').classList.toggle('expanded');
+      });
+    });
+
+    // 区块全选/取消全选
+    elements.smartRestoreSections.querySelectorAll('.restore-section-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const section = checkbox.dataset.section;
+        const checked = checkbox.checked;
+        elements.smartRestoreSections.querySelectorAll(`.restore-item-checkbox[data-section="${section}"]`).forEach(itemCheckbox => {
+          itemCheckbox.checked = checked;
+        });
+      });
+    });
+
+    // 子项勾选影响区块勾选状态
+    elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const section = checkbox.dataset.section;
+        const allItems = elements.smartRestoreSections.querySelectorAll(`.restore-item-checkbox[data-section="${section}"]`);
+        const checkedItems = elements.smartRestoreSections.querySelectorAll(`.restore-item-checkbox[data-section="${section}"]:checked`);
+        const sectionCheckbox = elements.smartRestoreSections.querySelector(`.restore-section-checkbox[data-section="${section}"]`);
+        if (sectionCheckbox) {
+          sectionCheckbox.checked = checkedItems.length === allItems.length;
+          sectionCheckbox.indeterminate = checkedItems.length > 0 && checkedItems.length < allItems.length;
+        }
+      });
+    });
+  }
+
+  // 关闭智能恢复弹窗
+  function closeSmartRestoreModal() {
+    elements.smartRestoreModal.classList.remove('active');
+    smartRestoreDiff = null;
+  }
+
+  // 确认智能恢复
+  async function confirmSmartRestore() {
+    if (!smartRestoreDiff) return;
+
+    const { diff, cloudData } = smartRestoreDiff;
+    let changesApplied = 0;
+
+    try {
+      // 处理分区
+      const partitionCheckboxes = elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox[data-section="partitions"]:checked');
+      for (const checkbox of partitionCheckboxes) {
+        const id = parseInt(checkbox.dataset.id);
+        const type = checkbox.dataset.type;
+        
+        if (type === 'added') {
+          const item = diff.partitions.added.find(p => p.id === id);
+          if (item) {
+            state.partitions.push(item);
+            changesApplied++;
+          }
+        } else if (type === 'modified') {
+          const item = diff.partitions.modified.find(p => p.cloud.id === id);
+          if (item) {
+            const index = state.partitions.findIndex(p => p.id === id);
+            if (index !== -1) {
+              state.partitions[index] = { ...state.partitions[index], ...item.cloud };
+              changesApplied++;
+            }
+          }
+        } else if (type === 'deleted') {
+          state.partitions = state.partitions.filter(p => p.id !== id);
+          changesApplied++;
+        }
+      }
+      await Storage.set('partitions', state.partitions);
+
+      // 处理文件夹
+      const folderCheckboxes = elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox[data-section="folders"]:checked');
+      for (const checkbox of folderCheckboxes) {
+        const id = parseInt(checkbox.dataset.id);
+        const type = checkbox.dataset.type;
+        
+        if (type === 'added') {
+          const item = diff.folders.added.find(f => f.id === id);
+          if (item) {
+            state.folders.push(item);
+            changesApplied++;
+          }
+        } else if (type === 'modified') {
+          const item = diff.folders.modified.find(f => f.cloud.id === id);
+          if (item) {
+            const index = state.folders.findIndex(f => f.id === id);
+            if (index !== -1) {
+              state.folders[index] = { ...state.folders[index], ...item.cloud };
+              changesApplied++;
+            }
+          }
+        } else if (type === 'deleted') {
+          state.folders = state.folders.filter(f => f.id !== id);
+          changesApplied++;
+        }
+      }
+      await Storage.set('folders', state.folders);
+
+      // 处理书签
+      const shortcutCheckboxes = elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox[data-section="shortcuts"]:checked');
+      for (const checkbox of shortcutCheckboxes) {
+        const id = parseInt(checkbox.dataset.id);
+        const type = checkbox.dataset.type;
+        
+        if (type === 'added') {
+          const item = diff.shortcuts.added.find(s => s.id === id);
+          if (item) {
+            state.shortcuts.push(item);
+            changesApplied++;
+          }
+        } else if (type === 'modified') {
+          const item = diff.shortcuts.modified.find(s => s.cloud.id === id);
+          if (item) {
+            const index = state.shortcuts.findIndex(s => s.id === id);
+            if (index !== -1) {
+              state.shortcuts[index] = { ...state.shortcuts[index], ...item.cloud };
+              changesApplied++;
+            }
+          }
+        } else if (type === 'deleted') {
+          state.shortcuts = state.shortcuts.filter(s => s.id !== id);
+          changesApplied++;
+        }
+      }
+      await Storage.set('shortcuts', state.shortcuts);
+
+      // 处理搜索引擎
+      const engineCheckboxes = elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox[data-section="searchEngines"]:checked');
+      for (const checkbox of engineCheckboxes) {
+        const id = parseInt(checkbox.dataset.id);
+        const type = checkbox.dataset.type;
+        
+        if (type === 'added') {
+          const item = diff.searchEngines.added.find(e => e.id === id);
+          if (item) {
+            state.searchEngines.push(item);
+            changesApplied++;
+          }
+        } else if (type === 'modified') {
+          const item = diff.searchEngines.modified.find(e => e.cloud.id === id);
+          if (item) {
+            const index = state.searchEngines.findIndex(e => e.id === id);
+            if (index !== -1) {
+              state.searchEngines[index] = { ...state.searchEngines[index], ...item.cloud };
+              changesApplied++;
+            }
+          }
+        } else if (type === 'deleted') {
+          state.searchEngines = state.searchEngines.filter(e => e.id !== id);
+          changesApplied++;
+        }
+      }
+      await Storage.set('searchEngines', state.searchEngines);
+
+      // 处理设置
+      const settingsCheckbox = elements.smartRestoreSections.querySelector('.restore-item-checkbox[data-section="settings"]:checked');
+      if (settingsCheckbox && cloudData.settings) {
+        state.settings = {
+          bgType: cloudData.settings.bgType || 'gradient',
+          gradientColor1: cloudData.settings.gradientColor1 || '#667eea',
+          gradientColor2: cloudData.settings.gradientColor2 || '#764ba2',
+          gradientAngle: cloudData.settings.gradientAngle ?? 135,
+          solidColor: cloudData.settings.solidColor || '#1a1a2e',
+          bgImage: cloudData.settings.bgImage || '',
+          iconSize: cloudData.settings.iconSize ?? 57,
+          folderSize: cloudData.settings.folderSize ?? 65,
+          iconGap: cloudData.settings.iconGap ?? 15,
+          folderGap: cloudData.settings.folderGap ?? 20,
+          iconRadius: cloudData.settings.iconRadius ?? 11,
+          searchRadius: cloudData.settings.searchRadius ?? 16,
+          btnRadius: cloudData.settings.btnRadius ?? 12,
+          layoutMode: cloudData.settings.layoutMode || 'grid',
+          barWidth: cloudData.settings.barWidth ?? 180,
+          barHeight: cloudData.settings.barHeight ?? 40,
+          barGap: cloudData.settings.barGap ?? 8,
+          barColumns: cloudData.settings.barColumns ?? 4,
+          folderBarHeight: cloudData.settings.folderBarHeight ?? 44
+        };
+        await Storage.set('settings', state.settings);
+        changesApplied++;
+      }
+
+      // 处理密码
+      const passwordCheckboxes = elements.smartRestoreSections.querySelectorAll('.restore-item-checkbox[data-section="passwords"]:checked');
+      if (passwordCheckboxes.length > 0) {
+        const localPasswords = await PasswordManager.getAll();
+        const cloudPasswords = smartRestoreDiff.cloudPasswords || [];
+        
+        for (const checkbox of passwordCheckboxes) {
+          const id = parseInt(checkbox.dataset.id);
+          const type = checkbox.dataset.type;
+          
+          if (type === 'added') {
+            const item = diff.passwords.added.find(p => p.id === id);
+            if (item) {
+              // 添加新密码，需要生成新ID避免冲突
+              const maxId = localPasswords.reduce((max, p) => Math.max(max, p.id || 0), 0);
+              const newPassword = { ...item, id: maxId + 1, createdAt: Date.now(), updatedAt: Date.now() };
+              localPasswords.push(newPassword);
+              changesApplied++;
+            }
+          } else if (type === 'modified') {
+            const item = diff.passwords.modified.find(p => p.cloud.id === id);
+            if (item) {
+              const index = localPasswords.findIndex(p => p.id === id);
+              if (index !== -1) {
+                localPasswords[index] = { ...localPasswords[index], ...item.cloud, updatedAt: Date.now() };
+                changesApplied++;
+              }
+            }
+          } else if (type === 'deleted') {
+            const index = localPasswords.findIndex(p => p.id === id);
+            if (index !== -1) {
+              localPasswords.splice(index, 1);
+              changesApplied++;
+            }
+          }
+        }
+        
+        await PasswordManager.saveAll(localPasswords);
+      }
+
+      // 确保默认分区存在
+      ensureDefaultPartitions();
+
+      // 应用设置和重新渲染
+      applySettings();
+      applyBackground();
+      renderShortcuts();
+      renderEngines();
+      renderEngineSelector();
+
+      closeSmartRestoreModal();
+      showSyncInfo(`✅ 智能恢复完成！\n已应用 ${changesApplied} 项更改`);
+      showAlert(`智能恢复完成，已应用 ${changesApplied} 项更改`, 'success');
+      
+    } catch (e) {
+      console.error('智能恢复失败:', e);
+      showAlert('恢复失败: ' + e.message, 'error');
     }
   }
 
